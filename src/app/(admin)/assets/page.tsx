@@ -54,7 +54,8 @@ export default function AssetsPage() {
     useEffect(() => {
         let result = assets;
         if (search.trim()) {
-            const terms = search.toLowerCase().split(/\s+/).filter(Boolean);
+            // Normalize spaces and split by one or more sequences of whitespace.
+            const terms = search.toLowerCase().replace(/\s+/g, ' ').trim().split(' ');
             result = result.filter(a => {
                 const id = a.id.toLowerCase();
                 const name = a.name.toLowerCase();
