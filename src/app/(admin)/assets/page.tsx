@@ -24,6 +24,7 @@ export default function AssetsPage() {
     const [search, setSearch] = useState('');
     const [filterDept, setFilterDept] = useState('');
     const [filterStatus, setFilterStatus] = useState('');
+    const [sortOption, setSortOption] = useState<'none' | 'price-desc' | 'price-asc' | 'year-desc' | 'year-asc'>('none');
     const [page, setPage] = useState(1);
     const [depts, setDepts] = useState<string[]>([]);
 
@@ -65,9 +66,26 @@ export default function AssetsPage() {
         }
         if (filterDept) result = result.filter(a => a.location === filterDept);
         if (filterStatus) result = result.filter(a => a.status === filterStatus);
+
+        if (sortOption !== 'none') {
+            result = [...result].sort((a, b) => {
+                if (sortOption === 'price-desc' || sortOption === 'price-asc') {
+                    const priceA = a.originalPrice || 0;
+                    const priceB = b.originalPrice || 0;
+                    return sortOption === 'price-desc' ? priceB - priceA : priceA - priceB;
+                }
+                if (sortOption === 'year-desc' || sortOption === 'year-asc') {
+                    const yearA = Number(a.year) || 0;
+                    const yearB = Number(b.year) || 0;
+                    return sortOption === 'year-desc' ? yearB - yearA : yearA - yearB;
+                }
+                return 0;
+            });
+        }
+
         setFiltered(result);
         setPage(1);
-    }, [assets, search, filterDept, filterStatus]);
+    }, [assets, search, filterDept, filterStatus, sortOption]);
 
     const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
     const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -87,9 +105,10 @@ export default function AssetsPage() {
         setSearch('');
         setFilterDept('');
         setFilterStatus('');
+        setSortOption('none');
     }
 
-    const hasFilters = search || filterDept || filterStatus;
+    const hasFilters = search || filterDept || filterStatus || sortOption !== 'none';
 
     return (
         <div className="flex-1 overflow-y-auto">
@@ -144,6 +163,19 @@ export default function AssetsPage() {
                             {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
 
+                        {/* Sort filter */}
+                        <select
+                            className="select w-48"
+                            value={sortOption}
+                            onChange={e => setSortOption(e.target.value as any)}
+                        >
+                            <option value="none">Sắp xếp mặc định</option>
+                            <option value="price-desc">Giá trị: Lớn → Nhỏ</option>
+                            <option value="price-asc">Giá trị: Nhỏ → Lớn</option>
+                            <option value="year-desc">Năm mua: Mới → Cũ</option>
+                            <option value="year-asc">Năm mua: Cũ → Mới</option>
+                        </select>
+
                         {hasFilters && (
                             <button onClick={clearFilters} className="btn-ghost btn-sm text-rose-500">
                                 <X className="w-3.5 h-3.5" /> Xóa lọc
@@ -166,6 +198,8 @@ export default function AssetsPage() {
                                 <th>Phòng / Kho</th>
                                 <th>Người giữ</th>
                                 <th>Năm</th>
+                                <th>Nguyên giá</th>
+                                <th>Còn lại</th>
                                 <th>Trạng thái</th>
                                 <th className="text-right">Thao tác</th>
                             </tr>
@@ -174,20 +208,20 @@ export default function AssetsPage() {
                             {loading ? (
                                 Array.from({ length: 8 }).map((_, i) => (
                                     <tr key={i}>
-                                        {Array.from({ length: 6 }).map((_, j) => (
+                                        {Array.from({ length: 8 }).map((_, j) => (
                                             <td key={j}><div className="skeleton h-4 rounded" /></td>
                                         ))}
                                     </tr>
                                 ))
                             ) : paged.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="text-center py-12 text-slate-400">
+                                    <td colSpan={9} className="text-center py-12 text-slate-400">
                                         Không tìm thấy tài sản nào
                                     </td>
                                 </tr>
                             ) : (
-                                paged.map((a) => (
-                                    <tr key={a.id}>
+                                paged.map((a, i) => (
+                                    <tr key={a.row || `${a.id}-${i}`}>
                                         <td>
                                             <span className="font-mono text-xs bg-slate-100 px-2 py-0.5 rounded-lg text-slate-700">{a.id}</span>
                                         </td>
@@ -197,6 +231,18 @@ export default function AssetsPage() {
                                         <td className="text-slate-500">{a.location}</td>
                                         <td className="text-slate-500 max-w-[120px] truncate" title={a.person}>{a.person || '—'}</td>
                                         <td className="text-slate-500">{a.year}</td>
+                                        <td className="text-slate-700 font-medium">
+                                            {a.originalPrice ? new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(a.originalPrice) : '—'}
+                                        </td>
+                                        <td className="text-indigo-600 font-medium">
+                                            {a.originalPrice && a.year ? (() => {
+                                                const currentYear = new Date().getFullYear();
+                                                const yearsUsed = currentYear - Number(a.year);
+                                                const remainingPercent = Math.max(0, 1 - 0.2 * yearsUsed);
+                                                const remainingValue = a.originalPrice * remainingPercent;
+                                                return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(remainingValue);
+                                            })() : '—'}
+                                        </td>
                                         <td><StatusBadge status={a.status} /></td>
                                         <td>
                                             <div className="flex items-center justify-end gap-1">

@@ -10,6 +10,7 @@ export const SHEET_NAMES = {
     HISTORY_REPAIR: 'LichSuSuaChua',
     PENDING_CHECK: 'ChoXacNhanKiemKe',
     PENDING_REPAIR: 'ChoXacNhanSuaChua',
+    NOTIFICATIONS: 'ThongBao',
 } as const;
 
 function getAuth() {

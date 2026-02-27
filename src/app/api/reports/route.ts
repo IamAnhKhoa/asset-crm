@@ -38,6 +38,14 @@ export async function GET() {
                 repairCount: assetRepairs.length,
                 lastRepairTime: lastRepairTime || '—',
                 year: asset.year || '',
+                originalPrice: asset.originalPrice || 0,
+                remainingValue: (() => {
+                    const oy = Number(asset.year);
+                    if (!asset.originalPrice || isNaN(oy)) return 0;
+                    const p = Math.max(0, 1 - 0.2 * (new Date().getFullYear() - oy));
+                    return asset.originalPrice * p;
+                })(),
+                repairs: assetRepairs,
             };
         });
 

@@ -1,6 +1,6 @@
 'use client';
 import { FormEvent, useEffect, useState } from 'react';
-import { Package, CheckCircle, AlertTriangle, Clock, Search, Link as LinkIcon } from 'lucide-react';
+import { Package, CheckCircle, AlertTriangle, Clock, Search, Link as LinkIcon, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Dashboard } from '@/types';
 import Link from 'next/link';
@@ -9,6 +9,7 @@ export default function PublicDashboard() {
     const [dash, setDash] = useState<Dashboard | null>(null);
     const [loading, setLoading] = useState(true);
     const [assetId, setAssetId] = useState('');
+    const [isSearching, setIsSearching] = useState(false);
     const [showProfile, setShowProfile] = useState(false);
     const router = useRouter();
 
@@ -22,6 +23,7 @@ export default function PublicDashboard() {
     function handleSearch(e: FormEvent) {
         e.preventDefault();
         if (assetId.trim()) {
+            setIsSearching(true);
             router.push(`/lookup/${encodeURIComponent(assetId.trim())}`);
         }
     }
@@ -64,10 +66,10 @@ export default function PublicDashboard() {
                         />
                         <button
                             type="submit"
-                            disabled={!assetId.trim()}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-medium rounded-xl transition-colors"
+                            disabled={!assetId.trim() || isSearching}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-medium rounded-xl transition-colors flex items-center justify-center min-w-[94px]"
                         >
-                            Tra cứu
+                            {isSearching ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Tra cứu'}
                         </button>
                     </form>
                 </div>

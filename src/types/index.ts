@@ -10,6 +10,7 @@ export interface Asset {
     status: string;
     person?: string;
     specificLocation?: string;
+    originalPrice?: number;
     row?: number;
 }
 
@@ -52,6 +53,8 @@ export interface DashboardStats {
     pendingRepair: number;
     repairing: number;
     waitingFix: number;
+    totalOriginalValue?: number;
+    totalRemainingValue?: number;
 }
 
 export interface DeptCount {
@@ -102,6 +105,7 @@ export interface AssetFormData {
     status: string;
     person?: string;
     specificLocation?: string;
+    originalPrice?: number;
     isEdit?: boolean;
 }
 

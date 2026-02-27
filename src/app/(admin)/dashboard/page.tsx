@@ -20,6 +20,16 @@ const COMPARISON_PERIODS = [
   { value: 'year', label: 'Năm' },
 ];
 
+function formatCompactNumber(number: number) {
+  if (number >= 1e9) {
+    return (number / 1e9).toFixed(1).replace(/\.0$/, '') + ' Tỷ';
+  }
+  if (number >= 1e6) {
+    return (number / 1e6).toFixed(1).replace(/\.0$/, '') + ' Tr';
+  }
+  return new Intl.NumberFormat('vi-VN').format(number);
+}
+
 function SkeletonCard() {
   return (
     <div className="stat-card">
@@ -32,16 +42,16 @@ function SkeletonCard() {
 
 function StatCard({
   label, value, icon: Icon, color, sub,
-}: { label: string; value: number; icon: React.ElementType; color: string; sub?: string }) {
+}: { label: string; value: string | number; icon: React.ElementType; color: string; sub?: string }) {
   return (
     <div className="stat-card card-hover">
       <div className="flex items-start justify-between">
-        <div>
-          <p className="text-xs font-medium text-slate-500">{label}</p>
-          <p className={`text-3xl font-bold mt-1 ${color}`}>{value}</p>
-          {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
+        <div className="flex-1 min-w-0 pr-2">
+          <p className="text-xs font-medium text-slate-500 truncate">{label}</p>
+          <p className={`text-2xl font-bold mt-1 truncate ${color}`}>{value}</p>
+          {sub && <p className="text-xs text-slate-400 mt-0.5 truncate">{sub}</p>}
         </div>
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${color.replace('text-', 'bg-').replace('-600', '-50').replace('-500', '-50')}`}>
+        <div className={`w-10 h-10 shrink-0 rounded-xl flex items-center justify-center ${color.replace('text-', 'bg-').replace('-600', '-50').replace('-500', '-50')}`}>
           <Icon className={`w-5 h-5 ${color}`} />
         </div>
       </div>
@@ -144,15 +154,17 @@ export default function DashboardPage() {
       <div className="p-6 space-y-6">
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           {loading ? (
-            Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
+            Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
           ) : dash ? (
             <>
               <StatCard label="Tổng tài sản" value={dash.stats.total} icon={Package} color="text-indigo-600" sub={`${Object.keys(dash.deptCounts).length} phòng ban`} />
               <StatCard label="Đang tốt" value={dash.stats.good} icon={CheckCircle} color="text-emerald-600" sub={`${Math.round((dash.stats.good / (dash.stats.total || 1)) * 100)}% tổng số`} />
               <StatCard label="Cần sửa / Hỏng" value={dash.stats.needRepair + dash.stats.bad} icon={AlertTriangle} color="text-amber-600" sub={`${dash.stats.missing} mất / thất lạc`} />
               <StatCard label="Chờ xác nhận" value={dash.stats.pendingCheck + dash.stats.pendingRepair} icon={Clock} color="text-rose-500" sub={`${dash.stats.repairing} đang sửa`} />
+              <StatCard label="Tổng nguyên giá" value={formatCompactNumber(dash.stats.totalOriginalValue || 0)} icon={TrendingUp} color="text-emerald-600" sub="VNĐ" />
+              <StatCard label="Tổng còn lại" value={formatCompactNumber(dash.stats.totalRemainingValue || 0)} icon={TrendingDown} color="text-indigo-600" sub="VNĐ" />
             </>
           ) : null}
         </div>

@@ -14,6 +14,7 @@ const NAV_ITEMS = [
     { icon: Wrench, label: 'Sửa Chữa', href: '/repair', badgeKey: 'suachua' },
     { icon: ClipboardCheck, label: 'Báo Cáo', href: '/reports' },
     { icon: History, label: 'Lịch Sử', href: '/history' },
+    { icon: Settings, label: 'Cài Đặt', href: '/settings' },
 ];
 
 export function Sidebar() {

@@ -22,12 +22,24 @@ export async function getDashboardStats(): Promise<Dashboard> {
         pendingRepair: pending.suachua,
         repairing: 0,
         waitingFix: 0,
+        totalOriginalValue: 0,
+        totalRemainingValue: 0,
     };
 
     for (const a of assets) {
         const loc = a.location || '';
         if (loc) { depts[loc] = (depts[loc] || 0) + 1; }
         stats.total++;
+        if (a.originalPrice) {
+            stats.totalOriginalValue! += a.originalPrice;
+            const currentYear = new Date().getFullYear();
+            const yearNum = Number(a.year);
+            if (!isNaN(yearNum)) {
+                const yearsUsed = currentYear - yearNum;
+                const remainingPercent = Math.max(0, 1 - 0.2 * yearsUsed);
+                stats.totalRemainingValue! += a.originalPrice * remainingPercent;
+            }
+        }
         const st = (a.status || '').trim();
 
         if (st === 'Hỏng' || st === 'Thanh lý' || st === 'Mất / Thất lạc') {

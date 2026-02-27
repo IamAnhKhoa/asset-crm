@@ -17,8 +17,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     try {
         const id = decodeURIComponent(params.id);
         const body = await req.json();
-        const { name, location, year, status, person, specificLocation } = body;
-        const result = await updateAsset(id, { name, location, year, status, person, specificLocation });
+        const { name, location, year, status, person, specificLocation, originalPrice } = body;
+        const result = await updateAsset(id, { name, location, year, status, person, specificLocation, originalPrice });
         if (!result.success) {
             return NextResponse.json({ error: result.message }, { status: 404 });
         }

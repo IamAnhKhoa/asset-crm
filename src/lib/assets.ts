@@ -16,6 +16,7 @@ function rowToAsset(row: string[], rowIndex: number): Asset {
         status: row[4] || '',
         person: row[5] || '',
         specificLocation: row[6] || '',
+        originalPrice: row[7] ? (String(row[7]).replace(/[^0-9]/g, '') ? Number(String(row[7]).replace(/[^0-9]/g, '')) : undefined) : undefined,
         row: rowIndex,
     };
 }
@@ -64,6 +65,7 @@ export async function createAsset(
         data.status || 'Đang sử dụng',
         data.person || '',
         data.specificLocation || '',
+        data.originalPrice ? String(data.originalPrice) : '',
     ]);
     return { success: true, message: 'Đã thêm tài sản mới!' };
 }
@@ -82,6 +84,7 @@ export async function updateAsset(
             if (data.status !== undefined) await updateSheetCell(SHEET_NAMES.ASSETS, rowNum, 5, data.status);
             if (data.person !== undefined) await updateSheetCell(SHEET_NAMES.ASSETS, rowNum, 6, data.person);
             if (data.specificLocation !== undefined) await updateSheetCell(SHEET_NAMES.ASSETS, rowNum, 7, data.specificLocation);
+            if (data.originalPrice !== undefined) await updateSheetCell(SHEET_NAMES.ASSETS, rowNum, 8, data.originalPrice === null ? '' : String(data.originalPrice));
             return { success: true, message: 'Đã cập nhật tài sản!' };
         }
     }

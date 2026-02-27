@@ -1,9 +1,10 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { CheckCircle, Wrench, Clock, MapPin, Calendar, AlertTriangle, Loader2, ChevronDown, ChevronUp, Send, Package } from 'lucide-react';
+import { CheckCircle, Wrench, Clock, MapPin, Calendar, AlertTriangle, Loader2, ChevronDown, ChevronUp, Send, Package, Search } from 'lucide-react';
+import Link from 'next/link';
 
 interface AssetInfo {
-    id: string; name: string; location: string; year: number; status: string; person?: string; specificLocation?: string;
+    id: string; name: string; location: string; year: number; status: string; person?: string; specificLocation?: string; originalPrice?: number;
 }
 interface CheckReport {
     time: string; reporter: string; status: string; note: string;
@@ -179,6 +180,32 @@ export default function LookupPage({ params }: { params: { id: string } }) {
                                 <p className="text-sm font-medium text-slate-800">{asset.year || '—'}</p>
                             </div>
                         </div>
+                        {asset.originalPrice && (
+                            <div className="flex items-start gap-2 pt-2 border-t border-slate-50 col-span-2">
+                                <span className="w-4 h-4 rounded-full bg-indigo-50 flex items-center justify-center shrink-0 mt-0.5 text-indigo-500 font-bold text-[10px]">₫</span>
+                                <div className="flex-1 flex items-center justify-between">
+                                    <div>
+                                        <p className="text-[10px] text-slate-400 uppercase tracking-wider">Nguyên giá</p>
+                                        <p className="text-sm font-medium text-slate-800">
+                                            {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(asset.originalPrice)}
+                                        </p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="text-[10px] text-slate-400 uppercase tracking-wider">Còn lại (ước tính)</p>
+                                        <p className="text-sm font-bold text-indigo-600">
+                                            {(() => {
+                                                if (!asset.year) return '—';
+                                                const currentYear = new Date().getFullYear();
+                                                const yearsUsed = currentYear - Number(asset.year);
+                                                const remainingPercent = Math.max(0, 1 - 0.2 * yearsUsed);
+                                                const remainingValue = asset.originalPrice * remainingPercent;
+                                                return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(remainingValue);
+                                            })()}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                         <div className="flex items-start gap-2 pt-2 border-t border-slate-50">
                             <CheckCircle className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
                             <div>
@@ -399,6 +426,17 @@ export default function LookupPage({ params }: { params: { id: string } }) {
                         </div>
                     </div>
                 )}
+
+                {/* Back to Home / Search Next */}
+                <div className="pt-2 pb-4">
+                    <Link
+                        href="/"
+                        className="w-full bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-indigo-600 font-medium py-3 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-sm"
+                    >
+                        <Search className="w-4 h-4" />
+                        Tra cứu tài sản khác / Quay lại
+                    </Link>
+                </div>
 
                 {/* Footer */}
                 <p className="text-center text-[11px] text-slate-400 pb-4">

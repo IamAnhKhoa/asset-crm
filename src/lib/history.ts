@@ -8,7 +8,7 @@ import {
     SHEET_NAMES,
     formatDateTime,
 } from './sheets';
-import { updateAssetStatus } from './assets';
+import { updateAssetStatus, getAllAssets } from './assets';
 import { sendTelegramMessage } from './telegram';
 
 // =========================
@@ -343,11 +343,19 @@ export async function deletePendingRepair(
 //  ALL REPAIR TICKETS (pending + history)
 // =========================
 export async function getAllRepairTickets(): Promise<RepairTicket[]> {
-    const [pending, history] = await Promise.all([
+    const [pending, history, assets] = await Promise.all([
         getPendingRepairs(),
         getRepairHistory(),
+        getAllAssets(),
     ]);
-    return [...pending, ...history];
+
+    // Create lookup map for asset names
+    const assetMap = Object.fromEntries(assets.map(a => [a.id, a.name]));
+
+    const mapName = (tickets: RepairTicket[]) =>
+        tickets.map(t => ({ ...t, name: assetMap[t.assetId] || '' }));
+
+    return [...mapName(pending), ...mapName(history)];
 }
 
 // =========================

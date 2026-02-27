@@ -26,6 +26,7 @@ export function AssetModal({ asset, isEdit, onClose, onSaved }: Props) {
         status: asset?.status || 'Đang sử dụng',
         person: asset?.person || '',
         specificLocation: asset?.specificLocation || '',
+        originalPrice: asset?.originalPrice ? String(asset?.originalPrice) : '',
     });
 
     const [customLocation, setCustomLocation] = useState('');
@@ -177,6 +178,10 @@ export function AssetModal({ asset, isEdit, onClose, onSaved }: Props) {
                         <div>
                             <label className="label">Năm mua</label>
                             <input type="number" className="input" value={form.year} onChange={e => set('year', e.target.value)} min={2000} max={2050} />
+                        </div>
+                        <div>
+                            <label className="label">Nguyên giá (VNĐ)</label>
+                            <input type="number" className="input" value={form.originalPrice} onChange={e => set('originalPrice', e.target.value)} min={0} placeholder="VD: 15000000" />
                         </div>
                         <div>
                             <label className="label">Trạng thái</label>
