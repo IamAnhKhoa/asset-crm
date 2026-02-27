@@ -21,17 +21,18 @@ export async function GET(request: Request) {
             const activeList = notifications.filter(n => {
                 if (!n.isActive) return false;
 
-                // Parse dates manually similar to parseViDate for filtering
+                // Parse dates to absolute timestamps enforcing GMT+7 timezone
                 const parseDate = (dStr: string) => {
                     if (!dStr || dStr === '—') return null;
                     const parts = dStr.split(' ');
                     const dates = parts[0].split('/');
                     if (dates.length !== 3) return null;
-                    const times = parts[1] ? parts[1].split(':') : ['0', '0'];
-                    return new Date(
-                        parseInt(dates[2]), parseInt(dates[1]) - 1, parseInt(dates[0]),
-                        parseInt(times[0]), parseInt(times[1])
-                    );
+                    const times = parts[1] ? parts[1].split(':') : ['00', '00'];
+
+                    // Construct an ISO 8601 string representing GMT+7 time
+                    // Format: YYYY-MM-DDTHH:mm:00+07:00
+                    const isoString = `${dates[2]}-${dates[1].padStart(2, '0')}-${dates[0].padStart(2, '0')}T${times[0].padStart(2, '0')}:${times[1].padStart(2, '0')}:00+07:00`;
+                    return new Date(isoString);
                 };
 
                 const start = parseDate(n.startDate);
