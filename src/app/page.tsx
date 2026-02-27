@@ -1,15 +1,17 @@
 'use client';
 import { FormEvent, useEffect, useState } from 'react';
-import { Package, CheckCircle, AlertTriangle, Clock, Search, Link as LinkIcon, Loader2 } from 'lucide-react';
+import { Package, CheckCircle, AlertTriangle, Clock, Search, Link as LinkIcon, Loader2, Camera, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Dashboard } from '@/types';
 import Link from 'next/link';
+import QRScanner from '@/components/QRScanner';
 
 export default function PublicDashboard() {
     const [dash, setDash] = useState<Dashboard | null>(null);
     const [loading, setLoading] = useState(true);
     const [assetId, setAssetId] = useState('');
     const [isSearching, setIsSearching] = useState(false);
+    const [isScanning, setIsScanning] = useState(false);
     const [showProfile, setShowProfile] = useState(false);
     const router = useRouter();
 
@@ -59,11 +61,19 @@ export default function PublicDashboard() {
                         <input
                             type="text"
                             autoFocus
-                            className="w-full pl-12 pr-4 py-4 rounded-2xl bg-white text-slate-900 shadow-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/30 transition-all font-mono text-lg"
+                            className="w-full pl-12 pr-[150px] py-4 rounded-2xl bg-white text-slate-900 shadow-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/30 transition-all font-mono text-lg uppercase"
                             placeholder="VD: MAYIN-001..."
                             value={assetId}
-                            onChange={e => setAssetId(e.target.value)}
+                            onChange={e => setAssetId(e.target.value.toUpperCase())}
                         />
+                        <button
+                            type="button"
+                            onClick={() => setIsScanning(true)}
+                            className="absolute right-[110px] top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-indigo-600 transition-colors bg-white rounded-lg hover:bg-indigo-50"
+                            title="Quét mã QR / Barcode"
+                        >
+                            <Camera className="w-6 h-6" />
+                        </button>
                         <button
                             type="submit"
                             disabled={!assetId.trim() || isSearching}
@@ -72,6 +82,35 @@ export default function PublicDashboard() {
                             {isSearching ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Tra cứu'}
                         </button>
                     </form>
+
+                    {/* Scanner Modal */}
+                    {isScanning && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4">
+                            <div className="bg-white rounded-2xl p-4 w-full max-w-md relative">
+                                <button
+                                    onClick={() => setIsScanning(false)}
+                                    className="absolute -top-12 right-0 p-2 text-white hover:text-red-400 transition-colors"
+                                >
+                                    <X className="w-8 h-8" />
+                                </button>
+                                <h3 className="text-xl font-bold text-slate-800 text-center mb-4">Quét mã tài sản</h3>
+                                <QRScanner
+                                    onScanSuccess={(decodedText) => {
+                                        setIsScanning(false);
+                                        setAssetId(decodedText);
+                                        // Optional: Automatically search after a brief delay
+                                        setTimeout(() => {
+                                            router.push(`/lookup/${encodeURIComponent(decodedText.trim())}`);
+                                        }, 500);
+                                    }}
+                                    onScanError={(err) => { /* ignore constant scan errors */ }}
+                                />
+                                <p className="text-sm text-slate-500 text-center mt-4">
+                                    Đưa mã QR hoặc Barcode vảo khung hình để quét tự động
+                                </p>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </section>
 
