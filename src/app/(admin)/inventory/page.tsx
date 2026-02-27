@@ -7,6 +7,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 const TABS = [
     { key: 'pending', label: 'Chờ duyệt' },
     { key: 'done', label: 'Đã duyệt' },
+    { key: 'rejected', label: 'Từ chối' },
 ];
 
 const CHECK_STATUS_OPTIONS = ['Tốt', 'Cần sửa', 'Hỏng', 'Mất / Thất lạc'];
@@ -59,7 +60,7 @@ export default function InventoryPage() {
         setBusy(null);
     }
 
-    const list = tab === 'pending' ? pending : history;
+    const list = tab === 'pending' ? pending : tab === 'rejected' ? history.filter(c => c.status.toLowerCase().includes('từ chối')) : history.filter(c => !c.status.toLowerCase().includes('từ chối'));
     const filtered = list.filter(c =>
         !search ||
         c.assetId.toLowerCase().includes(search.toLowerCase()) ||

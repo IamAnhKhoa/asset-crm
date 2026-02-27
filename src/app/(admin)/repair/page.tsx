@@ -12,6 +12,7 @@ const TABS = [
     { key: 'pending', label: 'Chờ duyệt' },
     { key: 'processing', label: 'Đang xử lý' },
     { key: 'done', label: 'Hoàn thành' },
+    { key: 'rejected', label: 'Từ chối' },
     { key: 'all', label: 'Tất cả' },
 ];
 
@@ -74,6 +75,7 @@ export default function RepairPage() {
         if (tab === 'pending') { if (as !== 'chờ duyệt') return false; }
         else if (tab === 'processing') { if (!rs.includes('đang') && !rs.includes('giao')) return false; }
         else if (tab === 'done') { if (!rs.includes('xong') && !rs.includes('hoàn thành') && (t.result || '').toLowerCase() !== 'không sửa được') return false; }
+        else if (tab === 'rejected') { if (!as.includes('từ chối')) return false; }
 
         if (search.trim()) {
             const kw = search.toLowerCase();
@@ -94,6 +96,7 @@ export default function RepairPage() {
         pending: tickets.filter(t => t.approveStatus?.toLowerCase() === 'chờ duyệt').length,
         processing: tickets.filter(t => { const rs = (t.repairStatus || '').toLowerCase(); return rs.includes('đang') || rs.includes('giao'); }).length,
         done: tickets.filter(t => { const rs = (t.repairStatus || '').toLowerCase(); return rs.includes('xong') || rs.includes('hoàn thành') || (t.result || '').toLowerCase() === 'không sửa được'; }).length,
+        rejected: tickets.filter(t => t.approveStatus?.toLowerCase().includes('từ chối')).length,
         all: tickets.length,
     };
 
