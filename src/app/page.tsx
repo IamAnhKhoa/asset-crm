@@ -97,10 +97,25 @@ export default function PublicDashboard() {
                                 <QRScanner
                                     onScanSuccess={(decodedText) => {
                                         setIsScanning(false);
-                                        setAssetId(decodedText);
-                                        // Optional: Automatically search after a brief delay
+                                        let finalId = decodedText.trim();
+
+                                        // If the QR code is a full URL, extract the ID
+                                        if (finalId.startsWith('http://') || finalId.startsWith('https://')) {
+                                            try {
+                                                const url = new URL(finalId);
+                                                const pathParts = url.pathname.split('/').filter(Boolean);
+                                                if (pathParts.length > 0) {
+                                                    finalId = decodeURIComponent(pathParts[pathParts.length - 1]);
+                                                }
+                                            } catch (e) {
+                                                console.error("Lỗi parse URL từ QR", e);
+                                            }
+                                        }
+
+                                        setAssetId(finalId);
+                                        // Automatically search after a brief delay
                                         setTimeout(() => {
-                                            router.push(`/lookup/${encodeURIComponent(decodedText.trim())}`);
+                                            router.push(`/lookup/${encodeURIComponent(finalId)}`);
                                         }, 500);
                                     }}
                                     onScanError={(err) => { /* ignore constant scan errors */ }}
