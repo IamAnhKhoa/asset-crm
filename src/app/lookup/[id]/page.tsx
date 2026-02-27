@@ -27,6 +27,7 @@ const STATUS_COLORS: Record<string, string> = {
     'Đang sửa chữa': 'bg-blue-100 text-blue-700 border-blue-200',
     'Hỏng': 'bg-rose-100 text-rose-700 border-rose-200',
     'Tốt': 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    'Từ chối': 'bg-slate-200 text-slate-700 border-slate-300',
 };
 function Chip({ label }: { label: string }) {
     const cls = STATUS_COLORS[label] || 'bg-slate-100 text-slate-600 border-slate-200';
