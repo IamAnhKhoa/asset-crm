@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import NotificationMarquee from '@/components/NotificationMarquee';
+import { Analytics } from '@vercel/analytics/react';
 
 export const metadata: Metadata = {
   title: 'Quản lý tài sản Trạm Y tế Tân An Hội',
@@ -13,6 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <NotificationMarquee />
         {children}
+        <Analytics />
       </body>
     </html>
   );
