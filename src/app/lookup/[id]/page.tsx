@@ -54,7 +54,15 @@ export default function LookupPage({ params }: { params: { id: string } }) {
     useEffect(() => {
         fetch(`/api/lookup/${encodeURIComponent(assetId)}`)
             .then(r => r.json())
-            .then(d => { if (d.error) setError(d.error); else setData(d); })
+            .then(d => {
+                if (d.error) setError(d.error);
+                else {
+                    setData(d);
+                    if (d.asset && d.asset.person) {
+                        setPerson(d.asset.person);
+                    }
+                }
+            })
             .catch(() => setError('Không thể tải thông tin tài sản'))
             .finally(() => setLoading(false));
     }, [assetId]);

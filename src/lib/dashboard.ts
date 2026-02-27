@@ -28,18 +28,31 @@ export async function getDashboardStats(): Promise<Dashboard> {
         const loc = a.location || '';
         if (loc) { depts[loc] = (depts[loc] || 0) + 1; }
         stats.total++;
-        const st = (a.status || '').toLowerCase();
-        if (st.includes('hư') || st.includes('thanh lý') || st.includes('hong')) stats.bad++;
-        else if (st.includes('sửa') || st.includes('cần')) stats.needRepair++;
-        else if (st.includes('mất') || st.includes('thất lạc')) stats.missing++;
-        else stats.good++;
+        const st = (a.status || '').trim();
+
+        if (st === 'Hỏng' || st === 'Thanh lý' || st === 'Mất / Thất lạc') {
+            if (st === 'Hỏng' || st === 'Thanh lý') stats.bad++;
+            if (st === 'Mất / Thất lạc') stats.missing++;
+        }
+        else if (st === 'Cần sửa' || st === 'Đang sửa chữa') {
+            stats.needRepair++;
+        }
+        else {
+            stats.good++;
+        }
     }
 
     for (const t of tickets) {
-        const rs = (t.repairStatus || '').toLowerCase();
-        const as = (t.approveStatus || '').toLowerCase();
-        if (rs.includes('đang xử lý') || rs.includes('giao đơn vị ngoài')) stats.repairing++;
-        if (rs.includes('chưa xử lý') || as.includes('chờ duyệt')) stats.waitingFix++;
+        const rs = (t.repairStatus || '').trim();
+        const as = (t.approveStatus || '').trim();
+
+        if (rs === 'Đang xử lý' || rs === 'Đã giao đơn vị ngoài xử lý') {
+            stats.repairing++;
+        }
+        // Count anything not handled yet as waitingFix
+        if (rs === 'Chưa xử lý' || as === 'Chờ duyệt') {
+            stats.waitingFix++;
+        }
     }
 
     const recentAssets = assets.slice(Math.max(0, assets.length - 5)).reverse();
