@@ -290,11 +290,37 @@ export default function LookupPage({ params }: { params: { id: string } }) {
                                     <div>
                                         <label className="label">Mô tả lỗi / nhu cầu sửa chữa *</label>
                                         <textarea
-                                            className="input min-h-[80px] resize-none"
+                                            className="input min-h-[80px] resize-none pb-2"
                                             placeholder="Ví dụ: Máy không khởi động được, màn hình bị chớp, cần thay pin..."
                                             value={issue}
                                             onChange={e => setIssue(e.target.value)}
                                         />
+                                        {/* Quick Select Issue Suggestions */}
+                                        <div className="mt-2 flex flex-wrap gap-1.5">
+                                            {(() => {
+                                                const assetName = (data?.asset?.name || '').toLowerCase();
+                                                let suggestions: string[] = [];
+
+                                                if (assetName.includes('máy in')) {
+                                                    suggestions = ['Bơm mực', 'Máy in lem', 'Máy in mờ', 'Kẹt giấy', 'Không in được'];
+                                                } else if (assetName.includes('máy tính') || assetName.includes('laptop') || assetName.includes('pc')) {
+                                                    suggestions = ['Hư màn hình', 'Máy không lên', 'Máy chậm / Đơ', 'Mất mạng', 'Lỗi Win'];
+                                                } else {
+                                                    suggestions = ['Không hoạt động', 'Mất nguồn', 'Kêu to bất thường'];
+                                                }
+
+                                                return suggestions.map(s => (
+                                                    <button
+                                                        key={s}
+                                                        type="button"
+                                                        onClick={() => setIssue(prev => prev ? `${prev}, ${s}` : s)}
+                                                        className="px-2 py-1 text-[11px] font-medium bg-indigo-50 text-indigo-600 rounded-md border border-indigo-100 hover:bg-indigo-100 transition-colors"
+                                                    >
+                                                        + {s}
+                                                    </button>
+                                                ));
+                                            })()}
+                                        </div>
                                     </div>
                                 )}
 
