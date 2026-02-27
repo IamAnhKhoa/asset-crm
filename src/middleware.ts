@@ -21,7 +21,7 @@ export function middleware(req: NextRequest) {
             const authValue = basicAuth.split(' ')[1];
             const [user, pwd] = atob(authValue).split(':');
 
-            const isMainAdmin = user === 'AnhKhoaIT' && pwd === 'Sockladien1@';
+            const isMainAdmin = user === 'admin' && pwd === 'Sockladien1@';
             const isTestAdmin = user === 'admin' && pwd === 'admin';
 
             if (isMainAdmin || isTestAdmin) {
