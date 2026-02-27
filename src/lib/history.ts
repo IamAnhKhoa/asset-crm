@@ -60,20 +60,6 @@ export async function getRepairHistory(assetId?: string): Promise<RepairTicket[]
     return result;
 }
 
-export async function updateRepairHistory(
-    rowIndex: number,
-    data: ApproveRepairData
-): Promise<{ success: boolean; message: string }> {
-    try {
-        await updateSheetCell(SHEET_NAMES.HISTORY_REPAIR, rowIndex, 7, data.repairStatus);
-        await updateSheetCell(SHEET_NAMES.HISTORY_REPAIR, rowIndex, 8, data.result);
-        await updateSheetCell(SHEET_NAMES.HISTORY_REPAIR, rowIndex, 9, data.handlerNote);
-        await updateSheetCell(SHEET_NAMES.HISTORY_REPAIR, rowIndex, 10, formatDateTime(new Date()));
-        return { success: true, message: 'Đã cập nhật trạng thái sửa chữa!' };
-    } catch (e) {
-        return { success: false, message: 'Lỗi: ' + String(e) };
-    }
-}
 
 // =========================
 //  PENDING – KIỂM KÊ
@@ -151,7 +137,15 @@ export async function rejectCheck(
     reason: string
 ): Promise<{ success: boolean; message: string }> {
     try {
+        const pendingData = await getSheetValues(SHEET_NAMES.PENDING_CHECK);
+        const row = pendingData[rowIndex - 1];
+
         await updateSheetCell(SHEET_NAMES.PENDING_CHECK, rowIndex, 6, 'Từ chối: ' + reason);
+
+        await appendSheetRow(SHEET_NAMES.HISTORY_CHECK, [
+            row[0], row[1], row[2], 'Từ chối', reason,
+        ]);
+
         return { success: true, message: 'Đã từ chối báo cáo kiểm kê!' };
     } catch (e) {
         return { success: false, message: 'Lỗi: ' + String(e) };
@@ -161,6 +155,23 @@ export async function rejectCheck(
 // =========================
 //  PENDING – SỬA CHỮA
 // =========================
+
+export async function syncAssetStatusFromRepair(assetId: string, repairStatus: string, result?: string) {
+    let newStatus = 'Đang sử dụng';
+
+    if (result === 'Không sửa được') {
+        newStatus = 'Hỏng';
+    } else if (repairStatus === 'Đã sửa xong') {
+        newStatus = 'Đang sử dụng';
+    } else if (repairStatus === 'Đang xử lý' || repairStatus === 'Đã giao đơn vị ngoài xử lý') {
+        newStatus = 'Đang sửa chữa';
+    } else if (repairStatus === 'Chưa xử lý') {
+        newStatus = 'Cần sửa';
+    }
+
+    await updateAssetStatus(assetId, newStatus);
+}
+
 export async function getPendingRepairs(): Promise<RepairTicket[]> {
     const data = await getSheetValues(SHEET_NAMES.PENDING_REPAIR);
     if (data.length <= 1) return [];
@@ -187,6 +198,29 @@ export async function getPendingRepairs(): Promise<RepairTicket[]> {
     return result;
 }
 
+export async function updateRepairHistory(
+    rowIndex: number,
+    data: ApproveRepairData
+): Promise<{ success: boolean; message: string }> {
+    try {
+        await updateSheetCell(SHEET_NAMES.HISTORY_REPAIR, rowIndex, 7, data.repairStatus);
+        await updateSheetCell(SHEET_NAMES.HISTORY_REPAIR, rowIndex, 8, data.result);
+        await updateSheetCell(SHEET_NAMES.HISTORY_REPAIR, rowIndex, 9, data.handlerNote);
+        await updateSheetCell(SHEET_NAMES.HISTORY_REPAIR, rowIndex, 10, formatDateTime(new Date()));
+
+        // Extract assetId from the historical row
+        const sheetData = await getSheetValues(SHEET_NAMES.HISTORY_REPAIR);
+        const row = sheetData[rowIndex - 1];
+        if (row && row[1]) {
+            await syncAssetStatusFromRepair(row[1], data.repairStatus, data.result);
+        }
+
+        return { success: true, message: 'Đã cập nhật trạng thái sửa chữa!' };
+    } catch (e) {
+        return { success: false, message: 'Lỗi: ' + String(e) };
+    }
+}
+
 export async function createRepairTicket(data: {
     assetId: string;
     reporter: string;
@@ -206,6 +240,8 @@ export async function createRepairTicket(data: {
             formatDateTime(new Date()), data.assetId, data.reporter,
             data.issue, data.note, 'Chờ duyệt', 'Chưa xử lý', 'Chưa hoàn thành', '', '', data.location,
         ]);
+
+        await syncAssetStatusFromRepair(data.assetId, 'Chưa xử lý');
 
         // Send Telegram notification for new ticket
         const message = `🚨 CÓ PHIẾU BÁO HỎNG MỚI!\n\n` +
@@ -243,6 +279,10 @@ export async function approveRepair(
             updatedTime, row[10],
         ]);
 
+        if (row && row[1]) {
+            await syncAssetStatusFromRepair(row[1], repairStatus, result);
+        }
+
         // Send Telegram notification
         const message = `🛠 PHIẾU SỬA CHỮA ĐÃ DUYỆT\n\n` +
             `📍 Máy: ${row[1]}\n` +
@@ -265,7 +305,22 @@ export async function rejectRepair(
     reason: string
 ): Promise<{ success: boolean; message: string }> {
     try {
+        const pendingData = await getSheetValues(SHEET_NAMES.PENDING_REPAIR);
+        const row = pendingData[rowIndex - 1];
+
+        const updatedTime = formatDateTime(new Date());
+
         await updateSheetCell(SHEET_NAMES.PENDING_REPAIR, rowIndex, 6, 'Từ chối: ' + reason);
+        await appendSheetRow(SHEET_NAMES.HISTORY_REPAIR, [
+            row[0], row[1], row[2], row[3], row[4],
+            'Từ chối', '', '', 'Lý do: ' + reason,
+            updatedTime, row[10],
+        ]);
+
+        if (row && row[1]) {
+            await updateAssetStatus(row[1], 'Đang sử dụng');
+        }
+
         return { success: true, message: 'Đã từ chối phiếu sửa chữa!' };
     } catch (e) {
         return { success: false, message: 'Lỗi: ' + String(e) };
