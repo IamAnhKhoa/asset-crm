@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef } from 'react';
-import { Html5QrcodeScanner } from 'html5-qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
 
 interface QRScannerProps {
     onScanSuccess: (decodedText: string) => void;
@@ -8,34 +8,43 @@ interface QRScannerProps {
 }
 
 export default function QRScanner({ onScanSuccess, onScanError }: QRScannerProps) {
-    const scannerRef = useRef<Html5QrcodeScanner | null>(null);
+    const scannerRef = useRef<Html5Qrcode | null>(null);
 
     useEffect(() => {
-        // html5-qrcode requires a div with a specific ID to mount
-        scannerRef.current = new Html5QrcodeScanner(
-            "reader",
-            {
-                fps: 10,
-                qrbox: { width: 250, height: 250 },
-                aspectRatio: 1.0,
-                showTorchButtonIfSupported: true,
-            },
-            /* verbose= */ false
-        );
+        const html5QrCode = new Html5Qrcode("reader");
+        scannerRef.current = html5QrCode;
 
         const internalOnScanSuccess = (decodedText: string) => {
-            // we pause or clear to avoid multiple scans
-            if (scannerRef.current) {
+            // we pause to avoid multiple scans
+            if (scannerRef.current && html5QrCode.getState() === 2 /* SCANNING */) {
                 scannerRef.current.pause(true);
             }
             onScanSuccess(decodedText);
         };
 
-        scannerRef.current.render(internalOnScanSuccess, onScanError);
+        html5QrCode.start(
+            { facingMode: "environment" },
+            {
+                fps: 10,
+                qrbox: { width: 250, height: 250 },
+                aspectRatio: 1.0,
+            },
+            internalOnScanSuccess,
+            onScanError
+        ).catch((err) => {
+            console.error("Camera start error:", err);
+            if (onScanError) onScanError(err);
+        });
 
         return () => {
             if (scannerRef.current) {
-                scannerRef.current.clear().catch(console.error);
+                try {
+                    scannerRef.current.stop().then(() => {
+                        scannerRef.current?.clear();
+                    }).catch(console.error);
+                } catch (err) {
+                    console.error("Error stopping scanner", err);
+                }
             }
         };
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
