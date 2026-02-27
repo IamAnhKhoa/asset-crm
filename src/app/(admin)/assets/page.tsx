@@ -54,12 +54,13 @@ export default function AssetsPage() {
     useEffect(() => {
         let result = assets;
         if (search.trim()) {
-            const kw = search.toLowerCase();
-            result = result.filter(a =>
-                a.id.toLowerCase().includes(kw) ||
-                a.name.toLowerCase().includes(kw) ||
-                (a.location || '').toLowerCase().includes(kw)
-            );
+            const terms = search.toLowerCase().split(/\s+/).filter(Boolean);
+            result = result.filter(a => {
+                const id = a.id.toLowerCase();
+                const name = a.name.toLowerCase();
+                const loc = (a.location || '').toLowerCase();
+                return terms.every(term => id.includes(term) || name.includes(term) || loc.includes(term));
+            });
         }
         if (filterDept) result = result.filter(a => a.location === filterDept);
         if (filterStatus) result = result.filter(a => a.status === filterStatus);
