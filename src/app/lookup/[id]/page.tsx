@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle, Wrench, Clock, MapPin, Calendar, AlertTriangle, Loader2, ChevronDown, ChevronUp, Send, Package, Search } from 'lucide-react';
 import Link from 'next/link';
+import { QRCodeSVG } from 'qrcode.react';
 
 interface AssetInfo {
     id: string; name: string; location: string; year: number; status: string; person?: string; specificLocation?: string; originalPrice?: number;
@@ -138,15 +139,28 @@ export default function LookupPage({ params }: { params: { id: string } }) {
                 {/* Asset card */}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                     {/* Header strip */}
-                    <div className="px-5 py-4 bg-gradient-to-r from-indigo-600 to-indigo-500">
-                        <div className="flex items-center justify-between mb-1">
-                            <span className="text-[11px] font-medium text-indigo-200 uppercase tracking-wider">Thông tin tài sản &amp; kiểm kê</span>
-                            <span className="text-[11px] bg-white/20 text-white px-2 py-0.5 rounded-full">
-                                {hasPendingCheck ? '⏳ Đang kiểm kê' : '✅ Đã kiểm kê'}
-                            </span>
+                    <div className="px-5 py-4 bg-gradient-to-r from-indigo-600 to-indigo-500 flex justify-between items-start gap-3">
+                        <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-1">
+                                <span className="text-[11px] font-medium text-indigo-200 uppercase tracking-wider">Thông tin tài sản &amp; kiểm kê</span>
+                            </div>
+                            <p className="text-[11px] text-indigo-200 font-mono">Mã: {asset.id}</p>
+                            <h1 className="text-lg font-bold text-white mt-0.5 leading-snug break-words pr-2">{asset.name}</h1>
+                            <div className="mt-2">
+                                <span className="text-[11px] bg-white/20 text-white px-2 py-0.5 rounded-full inline-block">
+                                    {hasPendingCheck ? '⏳ Đang kiểm kê' : '✅ Đã kiểm kê'}
+                                </span>
+                            </div>
                         </div>
-                        <p className="text-[11px] text-indigo-200 font-mono">Mã: {asset.id}</p>
-                        <h1 className="text-lg font-bold text-white mt-0.5 leading-snug">{asset.name}</h1>
+                        <div className="shrink-0 bg-white p-1.5 rounded-xl shadow-sm">
+                            <QRCodeSVG
+                                value={`https://qlts-tah.vercel.app/lookup/${encodeURIComponent(asset.id)}`}
+                                size={68}
+                                level="M"
+                                className="rounded-lg"
+                                includeMargin={false}
+                            />
+                        </div>
                     </div>
 
                     {/* Info grid */}
