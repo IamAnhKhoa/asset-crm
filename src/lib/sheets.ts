@@ -120,20 +120,32 @@ export async function deleteSheetRow(sheetName: string, rowIndex: number) {
 // =========================
 export function formatDateTime(d: Date | string): string {
     const date = d instanceof Date ? d : new Date(d);
-    const dd = String(date.getDate()).padStart(2, '0');
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const yyyy = date.getFullYear();
-    const hh = String(date.getHours()).padStart(2, '0');
-    const mi = String(date.getMinutes()).padStart(2, '0');
-    return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
+    const options: Intl.DateTimeFormatOptions = {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: false
+    };
+    const parts = new Intl.DateTimeFormat('en-GB', options).formatToParts(date);
+    const p: Record<string, string> = {};
+    parts.forEach(({ type, value }) => { p[type] = value; });
+
+    // In some environments, hour might be formatted as 24:xx instead of 00:xx
+    let hh = p.hour;
+    if (hh === '24') hh = '00';
+
+    return `${p.day}/${p.month}/${p.year} ${hh}:${p.minute}`;
 }
 
 export function formatDate(d: Date | string): string {
     const date = d instanceof Date ? d : new Date(d);
-    const dd = String(date.getDate()).padStart(2, '0');
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const yyyy = date.getFullYear();
-    return `${dd}/${mm}/${yyyy}`;
+    const options: Intl.DateTimeFormatOptions = {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        day: '2-digit', month: '2-digit', year: 'numeric'
+    };
+    const parts = new Intl.DateTimeFormat('en-GB', options).formatToParts(date);
+    const p: Record<string, string> = {};
+    parts.forEach(({ type, value }) => { p[type] = value; });
+    return `${p.day}/${p.month}/${p.year}`;
 }
 
 export function parseViDate(str: string): Date | null {
