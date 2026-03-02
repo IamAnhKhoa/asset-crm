@@ -202,15 +202,12 @@ export async function POST(req: NextRequest) {
                 }
             }
         }
-    }
 
-return NextResponse.json({ ok: true });
-} catch (e: any) {
-    console.error('Telegram Webhook error:', e);
-    // Still return 200 to Telegram to stop retries if it's a code error, 
-    // but log it for us.
-    return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 200 });
-}
+        return NextResponse.json({ ok: true });
+    } catch (e: any) {
+        console.error('Telegram Webhook error:', e);
+        return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 200 });
+    }
 }
 
 async function sendTelegramMessageDirect(chatId: number, text: string, replyMarkup?: any) {

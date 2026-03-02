@@ -9,6 +9,7 @@ export async function GET() {
     const status: any = {
         kv: 'unknown',
         sheets: 'unknown',
+        version: '1.0.2-fix-duplicates',
         timestamp: new Date().toISOString()
     };
 
