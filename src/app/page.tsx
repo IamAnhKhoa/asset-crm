@@ -1,14 +1,32 @@
 'use client';
 import { FormEvent, useEffect, useState } from 'react';
-import { Package, CheckCircle, AlertTriangle, Clock, Search, Link as LinkIcon, Loader2, Camera, X } from 'lucide-react';
+import { Package, CheckCircle, AlertTriangle, Clock, Search, Link as LinkIcon, Loader2, Camera, X, Printer, Wrench, Wifi, Cpu, Receipt, ShieldCheck } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Dashboard } from '@/types';
 import Link from 'next/link';
 import QRScanner from '@/components/QRScanner';
 
+interface ServiceItem {
+    loai: string; noiDung: string; donViTinh: string;
+    donGia: number; ghiChu: string;
+}
+
+const SERVICE_GROUPS = [
+    { key: 'Bơm Mực Máy In', icon: Printer, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200', header: 'bg-blue-500' },
+    { key: 'Sửa Chữa Máy In', icon: Wrench, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200', header: 'bg-amber-500' },
+    { key: 'Thiết Bị Mạng', icon: Wifi, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200', header: 'bg-emerald-500' },
+    { key: 'Linh Kiện Vi Tính', icon: Cpu, color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-200', header: 'bg-purple-500' },
+];
+
+function formatVND(n: number) {
+    return new Intl.NumberFormat('vi-VN').format(n) + ' đ';
+}
+
 export default function PublicDashboard() {
     const [dash, setDash] = useState<Dashboard | null>(null);
     const [loading, setLoading] = useState(true);
+    const [services, setServices] = useState<ServiceItem[]>([]);
+    const [loadingServices, setLoadingServices] = useState(true);
     const [assetId, setAssetId] = useState('');
     const [isSearching, setIsSearching] = useState(false);
     const [isScanning, setIsScanning] = useState(false);
@@ -20,6 +38,10 @@ export default function PublicDashboard() {
             .then(r => r.json())
             .then(d => { if (d && d.stats) setDash(d); })
             .finally(() => setLoading(false));
+        fetch('/api/gia-sua-chua')
+            .then(r => r.json())
+            .then(d => { if (Array.isArray(d)) setServices(d); })
+            .finally(() => setLoadingServices(false));
     }, []);
 
     function handleSearch(e: FormEvent) {
@@ -43,9 +65,17 @@ export default function PublicDashboard() {
                         <p className="text-[10px] uppercase tracking-wider text-slate-500 font-medium">Trạm Y tế Tân An Hội</p>
                     </div>
                 </div>
-                <Link href="/dashboard" prefetch={false} className="text-sm font-medium text-indigo-600 hover:text-indigo-700 flex items-center gap-1.5">
-                    Admin Login <LinkIcon className="w-3.5 h-3.5" />
-                </Link>
+                <div className="flex items-center gap-4">
+                    <a href="#bang-gia" className="text-sm font-medium text-slate-600 hover:text-indigo-600 flex items-center gap-1.5 transition-colors">
+                        <Receipt className="w-3.5 h-3.5" /> Bảng Giá Dịch Vụ
+                    </a>
+                    <Link href="/dashboard" prefetch={false} className="group relative flex items-center gap-2 pl-1 pr-4 py-1.5 bg-gradient-to-r from-indigo-600 to-blue-500 hover:from-indigo-500 hover:to-blue-400 text-white rounded-full transition-all duration-300 shadow-[0_4px_12px_rgba(79,70,229,0.3)] hover:shadow-[0_8px_20px_rgba(79,70,229,0.4)] hover:-translate-y-0.5 active:scale-95">
+                        <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm group-hover:bg-white/30 transition-colors">
+                            <ShieldCheck className="w-4 h-4 text-white" />
+                        </div>
+                        <span className="text-sm font-bold tracking-tight">Đăng nhập</span>
+                    </Link>
+                </div>
             </header>
 
             {/* Hero / Search */}
@@ -155,6 +185,60 @@ export default function PublicDashboard() {
                             <p className="text-13px text-slate-500 font-medium mt-1">{s.label}</p>
                         </div>
                     ))}
+                </div>
+            </section>
+
+            {/* Service Pricing Section */}
+            <section id="bang-gia" className="px-6 py-12 bg-white border-t border-slate-100">
+                <div className="max-w-5xl mx-auto">
+                    <div className="flex items-center gap-3 mb-8">
+                        <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center">
+                            <Receipt className="w-5 h-5 text-indigo-600" />
+                        </div>
+                        <div>
+                            <h3 className="section-title">Bảng Giá Dịch Vụ CNTT</h3>
+                            <p className="section-subtitle">Bơm mực máy in &amp; sửa chữa thiết bị</p>
+                        </div>
+                    </div>
+
+                    {loadingServices ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {[1, 2, 3, 4].map(i => <div key={i} className="skeleton h-40 rounded-2xl" />)}
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            {SERVICE_GROUPS.map(({ key, icon: Icon, color, bg, header }) => {
+                                const rows = services.filter(s => s.loai === key);
+                                if (rows.length === 0) return null;
+                                return (
+                                    <div key={key} className="rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                                        <div className={`${header} px-4 py-2.5 flex items-center gap-2 text-white`}>
+                                            <Icon className="w-4 h-4" />
+                                            <span className="font-semibold text-sm">{key}</span>
+                                        </div>
+                                        <table className="w-full text-sm">
+                                            <thead>
+                                                <tr className="bg-slate-50 border-b border-slate-100">
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500">Nội Dung</th>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 w-20">Đơn Vị</th>
+                                                    <th className="px-4 py-2 text-right text-xs font-medium text-slate-500 w-32">Đơn Giá</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-50">
+                                                {rows.map((item, idx) => (
+                                                    <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                                        <td className="px-4 py-2.5 font-medium text-slate-700">{item.noiDung}</td>
+                                                        <td className="px-4 py-2.5 text-slate-500 text-xs">{item.donViTinh}</td>
+                                                        <td className="px-4 py-2.5 text-right font-semibold text-indigo-700">{formatVND(item.donGia)}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
             </section>
 

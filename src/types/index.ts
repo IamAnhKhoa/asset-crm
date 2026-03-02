@@ -128,3 +128,32 @@ export interface ApproveRepairData {
     result: string;
     handlerNote: string;
 }
+
+export interface UserContext {
+    role: UserRole | string;
+    phongBan?: string;
+    tenChon?: string;
+}
+
+export type UserRole = 'guest' | 'user_basic' | 'admin_dept' | 'admin_holder' | 'admin_full';
+
+export interface NguoiDung {
+    rowIndex: number;
+    email: string;
+    tenGoogle: string;
+    phongBan: string;   // key from DEPARTMENT_NAMES
+    tenChon: string;    // chosen name from EMPLOYEES_DATA
+    role: UserRole;
+    ngayTao: string;
+    avatar?: string;
+    status: 'pending' | 'approved' | 'rejected';
+    lastActive?: string;
+}
+
+export const ROLE_LABELS: Record<UserRole, string> = {
+    guest: 'Khách',
+    user_basic: 'Nhân viên',
+    admin_dept: 'Quản lý Phòng',
+    admin_holder: 'Quản lý Người giữ',
+    admin_full: 'Admin Toàn quyền',
+};

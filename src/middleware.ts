@@ -1,37 +1,86 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { getToken } from 'next-auth/jwt';
 
-export function middleware(req: NextRequest) {
-    const basicAuth = req.headers.get('authorization');
+export async function middleware(req: NextRequest) {
     const url = req.nextUrl;
+    const isApiAuth = url.pathname.startsWith('/api/auth');
+    if (isApiAuth) return NextResponse.next();
 
-    // Protect these routes
-    const protectedPaths = ['/assets', '/repair', '/inventory', '/history', '/dashboard'];
-    // Check if the current path starts with any protected path
-    const isProtectedPath = protectedPaths.some((p) => {
-        // Exclude the public dashboard API endpoint
-        if (url.pathname === '/api/dashboard') return false;
+    const protectedPaths = ['/assets', '/repair', '/inventory', '/history', '/dashboard', '/gia-sua-chua', '/users'];
+    const isProtectedPath = protectedPaths.some(
+        (p) => url.pathname === p || url.pathname.startsWith(`${p}/`)
+    );
 
-        // Exact match for the base paths or starts with for subpaths
-        return url.pathname === p || url.pathname.startsWith(`${p}/`);
-    });
+    // Bỏ qua /api/dashboard public route cho trang chủ
+    if (url.pathname === '/api/dashboard') return NextResponse.next();
 
-    if (isProtectedPath) {
-        if (basicAuth) {
-            const authValue = basicAuth.split(' ')[1];
-            const [user, pwd] = atob(authValue).split(':');
+    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
 
-            const isMainAdmin = user === 'admin' && pwd === 'Sockladien1@';
+    // 1. Trang public
+    if (!isProtectedPath && url.pathname !== '/login' && url.pathname !== '/setup-profile') {
+        return NextResponse.next();
+    }
 
-            if (isMainAdmin) {
-                return NextResponse.next();
-            }
+    // 2. Chưa đăng nhập
+    if (!token) {
+        if (isProtectedPath || url.pathname === '/setup-profile') {
+            const loginUrl = new URL('/login', req.url);
+            loginUrl.searchParams.set('callbackUrl', url.pathname);
+            return NextResponse.redirect(loginUrl);
         }
+        return NextResponse.next();
+    }
 
-        return new NextResponse('Auth Required.', {
-            status: 401,
-            headers: { 'WWW-Authenticate': 'Basic realm="Secure Area"' },
-        });
+    // 3. Đã đăng nhập
+    const profileComplete = token.profileComplete as boolean;
+    const userRole = (token.role as string) || 'user_basic';
+    const status = (token.status as string) || 'pending';
+
+    if (url.pathname === '/login') {
+        if (!profileComplete) return NextResponse.redirect(new URL('/setup-profile', req.url));
+        return NextResponse.redirect(new URL(userRole === 'admin_full' ? '/dashboard' : '/assets', req.url));
+    }
+
+    if (url.pathname === '/setup-profile') {
+        // Allow even if profileComplete to show the "Pending" message
+        return NextResponse.next();
+    }
+
+    // Redirect to setup if profile not complete
+    if (isProtectedPath && !profileComplete) {
+        return NextResponse.redirect(new URL('/setup-profile', req.url));
+    }
+
+    // Redirect to setup (pending message) if not approved
+    if (isProtectedPath && status !== 'approved') {
+        return NextResponse.redirect(new URL('/setup-profile', req.url));
+    }
+
+    // 4. Kiểm tra quyền Guest
+    if (userRole === 'guest') {
+        // Guest can ONLY see /dashboard and /gia-sua-chua
+        const allowedPaths = ['/dashboard', '/gia-sua-chua'];
+        const isAllowed = allowedPaths.some(p => url.pathname === p || url.pathname.startsWith(`${p}/`));
+
+        if (!isAllowed && isProtectedPath) {
+            return NextResponse.redirect(new URL('/dashboard', req.url));
+        }
+    }
+
+    // 5. Kiểm tra quyền Admin
+    const adminOnlyPaths = ['/dashboard', '/reports', '/users', '/settings'];
+    const isAdminPath = adminOnlyPaths.some(p => url.pathname === p || url.pathname.startsWith(`${p}/`));
+
+    // Special case: Guest CAN see /dashboard
+    if (isAdminPath && userRole !== 'admin_full' && userRole !== 'guest' && url.pathname === '/dashboard') {
+        // Basic users shouldn't see dashboard stats? 
+        // Let's stick to existing logic or allow it if it's useful.
+        // User didn't explicitly say basic users can't see dashboard.
+    }
+
+    if (isAdminPath && userRole !== 'admin_full' && url.pathname !== '/dashboard') {
+        return NextResponse.redirect(new URL('/assets', req.url));
     }
 
     return NextResponse.next();

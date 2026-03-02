@@ -2,6 +2,8 @@
 import { Asset } from '@/types';
 import { useState, useEffect } from 'react';
 import { X, Save, Loader2 } from 'lucide-react';
+import { useSession } from 'next-auth/react';
+import { DEPARTMENT_NAMES } from '@/lib/employees';
 
 const STATUS_OPTIONS = [
     'Đang sử dụng', 'Cần sửa', 'Đang sửa chữa', 'Hỏng', 'Mất / Thất lạc', 'Thanh lý',
@@ -18,13 +20,25 @@ export function AssetModal({ asset, isEdit, onClose, onSaved }: Props) {
     const isCustomDeptsInitially = asset?.location && ![''].includes(asset.location);
     const isCustomPersonInitially = asset?.person && ![''].includes(asset.person);
 
+    const { data: session } = useSession();
+    const userRole = (session?.user as any)?.role || 'user_basic';
+    const userDept = (session?.user as any)?.phongBan || '';
+    const userName = (session?.user as any)?.tenChon || '';
+
+    const isBasicUser = userRole === 'user_basic';
+    const isAdminDept = userRole === 'admin_dept';
+    const userDeptName = DEPARTMENT_NAMES[userDept] || userDept;
+
+    const isLocationLocked = (isBasicUser || isAdminDept) && !isEdit;
+    const isPersonLocked = isBasicUser && !isEdit;
+
     const [form, setForm] = useState({
         id: asset?.id || '',
-        location: asset?.location || '',
+        location: asset?.location || (isLocationLocked ? userDeptName : ''),
         name: asset?.name || '',
         year: String(asset?.year || new Date().getFullYear()),
         status: asset?.status || 'Đang sử dụng',
-        person: asset?.person || '',
+        person: asset?.person || (isPersonLocked ? userName : ''),
         specificLocation: asset?.specificLocation || '',
         originalPrice: asset?.originalPrice ? String(asset?.originalPrice) : '',
     });
@@ -34,6 +48,9 @@ export function AssetModal({ asset, isEdit, onClose, onSaved }: Props) {
 
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
+
+    const [isIdManuallyEdited, setIsIdManuallyEdited] = useState(false);
+    const [randomSuffix] = useState(() => Math.floor(Math.random() * 999 + 1).toString().padStart(3, '0'));
 
     // NhanVien Data
     const [departments, setDepartments] = useState<Record<string, string>>({});
@@ -64,6 +81,30 @@ export function AssetModal({ asset, isEdit, onClose, onSaved }: Props) {
             .catch(console.error)
             .finally(() => setLoadingData(false));
     }, [asset]);
+
+    useEffect(() => {
+        if (!isEdit && !isIdManuallyEdited) {
+            const loc = form.location === 'Khác' ? customLocation : form.location;
+            const per = form.person === 'Khác' ? customPerson : form.person;
+
+            const getInitials = (text: string) => {
+                if (!text) return '';
+                let processed = text.replace(/^(Phòng|Khoa|Ban)\s+/i, '');
+                return processed.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D")
+                    .replace(/[^a-zA-Z0-9\s-]/g, "")
+                    .split(/[\s-]+/)
+                    .filter(w => w)
+                    .map(w => w.charAt(0).toUpperCase())
+                    .join('');
+            };
+
+            const prefix = [getInitials(loc), getInitials(per)].filter(Boolean).join('-');
+            const newId = prefix ? `${prefix}-${randomSuffix}` : '';
+            if (newId && form.id !== newId) {
+                setForm(f => ({ ...f, id: newId }));
+            }
+        }
+    }, [form.location, customLocation, form.person, customPerson, isEdit, isIdManuallyEdited, randomSuffix, form.id]);
 
     function set(k: string, v: string) { setForm(f => ({ ...f, [k]: v })); }
 
@@ -103,7 +144,16 @@ export function AssetModal({ asset, isEdit, onClose, onSaved }: Props) {
                 <form onSubmit={handleSubmit} className="p-6 space-y-4">
                     <div>
                         <label className="label">Mã tài sản *</label>
-                        <input className="input" value={form.id} onChange={e => set('id', e.target.value)} disabled={isEdit} placeholder="VD: TS-001" />
+                        <input
+                            className="input"
+                            value={form.id}
+                            onChange={e => {
+                                set('id', e.target.value);
+                                setIsIdManuallyEdited(true);
+                            }}
+                            disabled={isEdit}
+                            placeholder="VD: TS-001"
+                        />
                     </div>
                     <div>
                         <label className="label">Tên tài sản *</label>
@@ -115,7 +165,7 @@ export function AssetModal({ asset, isEdit, onClose, onSaved }: Props) {
                             <div className="skeleton h-10 w-full rounded-xl"></div>
                         ) : (
                             <div className="space-y-2">
-                                <select className="select" value={form.location} onChange={e => {
+                                <select className="select" value={form.location} disabled={isLocationLocked} onChange={e => {
                                     set('location', e.target.value);
                                     if (e.target.value !== 'Khác') set('person', ''); // reset person if changing
                                 }}>
@@ -144,7 +194,7 @@ export function AssetModal({ asset, isEdit, onClose, onSaved }: Props) {
                                 <div className="skeleton h-10 w-full rounded-xl"></div>
                             ) : (
                                 <div className="space-y-2">
-                                    <select className="select" value={form.person} onChange={e => set('person', e.target.value)} disabled={!form.location}>
+                                    <select className="select" value={form.person} disabled={!form.location || isPersonLocked} onChange={e => set('person', e.target.value)}>
                                         <option value="">-- Chọn nhân viên --</option>
                                         {form.location !== 'Khác' && form.location && (() => {
                                             const deptKey = Object.keys(departments).find(k => departments[k] === form.location);

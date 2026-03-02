@@ -10,14 +10,17 @@ import { AssetModal } from '@/components/modals/AssetModal';
 import { AssetDetailModal } from '@/components/modals/AssetDetailModal';
 import { QRCodeModal } from '@/components/modals/QRCodeModal';
 import { BulkQRCodeModal } from '@/components/modals/BulkQRCodeModal';
+import { useSession } from 'next-auth/react';
 
 const STATUS_OPTIONS = [
     'Đang sử dụng', 'Cần sửa', 'Đang sửa chữa', 'Hỏng', 'Mất / Thất lạc', 'Thanh lý',
 ];
 
-const PAGE_SIZE = 15;
-
 export default function AssetsPage() {
+    const { data: session } = useSession();
+    const role = (session?.user as any)?.role;
+    const isEditor = role && !['guest', 'user_basic'].includes(role);
+
     const [assets, setAssets] = useState<Asset[]>([]);
     const [filtered, setFiltered] = useState<Asset[]>([]);
     const [loading, setLoading] = useState(true);
@@ -26,8 +29,10 @@ export default function AssetsPage() {
     const [filterStatus, setFilterStatus] = useState('');
     const [sortOption, setSortOption] = useState<'none' | 'price-desc' | 'price-asc' | 'year-desc' | 'year-asc'>('none');
     const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
     const [depts, setDepts] = useState<string[]>([]);
 
+    const [duplicateIds, setDuplicateIds] = useState<Set<string>>(new Set());
     const [modal, setModal] = useState<'add' | 'edit' | 'detail' | null>(null);
     const [selected, setSelected] = useState<Asset | null>(null);
     const [deleting, setDeleting] = useState<string | null>(null);
@@ -37,10 +42,21 @@ export default function AssetsPage() {
     async function load() {
         setLoading(true);
         try {
-            const r = await fetch('/api/assets');
+            const r = await fetch('/api/assets?t=' + Date.now());
             const data = await r.json();
             const list: Asset[] = Array.isArray(data) ? data : [];
             setAssets(list);
+
+            // Detect duplicates
+            const idCount: Record<string, number> = {};
+            const dupes = new Set<string>();
+            list.forEach(a => {
+                const id = a.id.trim();
+                idCount[id] = (idCount[id] || 0) + 1;
+                if (idCount[id] > 1) dupes.add(id);
+            });
+            setDuplicateIds(dupes);
+
             const uniqueDepts = [...new Set<string>(list.map((a: Asset) => a.location).filter(Boolean))].sort();
             setDepts(uniqueDepts);
         } catch (e) {
@@ -87,8 +103,8 @@ export default function AssetsPage() {
         setPage(1);
     }, [assets, search, filterDept, filterStatus, sortOption]);
 
-    const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-    const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+    const totalPages = Math.ceil(filtered.length / pageSize);
+    const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
 
     async function handleDelete(id: string) {
         if (!confirm(`Xóa tài sản "${id}"?`)) return;
@@ -98,6 +114,23 @@ export default function AssetsPage() {
             load();
         } finally {
             setDeleting(null);
+        }
+    }
+
+    async function handleFixDuplicates() {
+        if (!confirm('Hệ thống sẽ tự động thêm (1), (2)... vào các mã tài sản bị trùng. Tiếp tục?')) return;
+        setLoading(true);
+        try {
+            const r = await fetch('/api/assets/fix-duplicates', { method: 'POST' });
+            const res = await r.json();
+            if (res.success) {
+                alert(`Đã xử lý xong ${res.fixes} mã trùng lặp!`);
+                load();
+            } else {
+                alert(`Lỗi: ${res.error}`);
+            }
+        } finally {
+            setLoading(false);
         }
     }
 
@@ -119,12 +152,21 @@ export default function AssetsPage() {
                     <p className="section-subtitle">{loading ? '...' : `${filtered.length} tài sản`}</p>
                 </div>
                 <div className="flex gap-2">
-                    <button onClick={() => setBulkQrModalOpen(true)} className="btn-secondary btn-sm gap-1.5 hidden sm:flex">
-                        <QrCode className="w-3.5 h-3.5" /> In QR hàng loạt
-                    </button>
-                    <button onClick={() => { setSelected(null); setModal('add'); }} className="btn-primary btn-sm gap-1.5">
-                        <Plus className="w-3.5 h-3.5" /> Thêm tài sản
-                    </button>
+                    {isEditor && (
+                        <>
+                            {duplicateIds.size > 0 && role === 'admin_full' && (
+                                <button onClick={handleFixDuplicates} className="btn-secondary btn-sm gap-1.5 text-amber-600 border-amber-200 bg-amber-50">
+                                    <QrCode className="w-3.5 h-3.5" /> Sửa trùng lặp ({duplicateIds.size.toLocaleString()})
+                                </button>
+                            )}
+                            <button onClick={() => setBulkQrModalOpen(true)} className="btn-secondary btn-sm gap-1.5 hidden sm:flex">
+                                <QrCode className="w-3.5 h-3.5" /> In QR hàng loạt
+                            </button>
+                            <button onClick={() => { setSelected(null); setModal('add'); }} className="btn-primary btn-sm gap-1.5">
+                                <Plus className="w-3.5 h-3.5" /> Thêm tài sản
+                            </button>
+                        </>
+                    )}
                 </div>
             </div>
 
@@ -201,7 +243,7 @@ export default function AssetsPage() {
                                 <th>Nguyên giá</th>
                                 <th>Còn lại</th>
                                 <th>Trạng thái</th>
-                                <th className="text-right">Thao tác</th>
+                                <th className="text-right">{isEditor ? 'Thao tác' : ''}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -223,7 +265,16 @@ export default function AssetsPage() {
                                 paged.map((a, i) => (
                                     <tr key={a.row || `${a.id}-${i}`}>
                                         <td>
-                                            <span className="font-mono text-xs bg-slate-100 px-2 py-0.5 rounded-lg text-slate-700">{a.id}</span>
+                                            <div className="flex items-center gap-1.5">
+                                                <span className={`font-mono text-xs px-2 py-0.5 rounded-lg ${duplicateIds.has(a.id.trim()) ? 'bg-amber-100 text-amber-700 ring-1 ring-amber-200' : 'bg-slate-100 text-slate-700'}`}>
+                                                    {a.id}
+                                                </span>
+                                                {duplicateIds.has(a.id.trim()) && (
+                                                    <span title="Mã trùng lặp - Cần xử lý" className="text-amber-500 cursor-help">
+                                                        <QrCode className="w-3 h-3" />
+                                                    </span>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className="max-w-[180px]">
                                             <p className="font-medium text-slate-800 truncate">{a.name}</p>
@@ -253,23 +304,27 @@ export default function AssetsPage() {
                                                 >
                                                     <Eye className="w-3.5 h-3.5" />
                                                 </button>
-                                                <button
-                                                    onClick={() => { setSelected(a); setModal('edit'); }}
-                                                    className="btn-icon btn-ghost text-slate-400 hover:text-indigo-500"
-                                                    title="Chỉnh sửa"
-                                                >
-                                                    <Pencil className="w-3.5 h-3.5" />
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDelete(a.id)}
-                                                    disabled={deleting === a.id}
-                                                    className="btn-icon btn-ghost text-slate-400 hover:text-rose-500"
-                                                    title="Xóa"
-                                                >
-                                                    {deleting === a.id
-                                                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                        : <Trash2 className="w-3.5 h-3.5" />}
-                                                </button>
+                                                {isEditor && (
+                                                    <>
+                                                        <button
+                                                            onClick={() => { setSelected(a); setModal('edit'); }}
+                                                            className="btn-icon btn-ghost text-slate-400 hover:text-indigo-500"
+                                                            title="Chỉnh sửa"
+                                                        >
+                                                            <Pencil className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDelete(a.id)}
+                                                            disabled={deleting === a.id}
+                                                            className="btn-icon btn-ghost text-slate-400 hover:text-rose-500"
+                                                            title="Xóa"
+                                                        >
+                                                            {deleting === a.id
+                                                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                : <Trash2 className="w-3.5 h-3.5" />}
+                                                        </button>
+                                                    </>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -280,41 +335,59 @@ export default function AssetsPage() {
                 </div>
 
                 {/* Pagination */}
-                {totalPages > 1 && (
+                {filtered.length > 0 && (
                     <div className="flex items-center justify-between card px-4 py-3">
-                        <span className="text-xs text-slate-500">
-                            Trang {page}/{totalPages} · {filtered.length} kết quả
-                        </span>
-                        <div className="flex items-center gap-1">
-                            <button
-                                onClick={() => setPage(p => Math.max(1, p - 1))}
-                                disabled={page === 1}
-                                className="btn-icon btn-secondary btn-sm"
-                            >
-                                <ChevronLeft className="w-4 h-4" />
-                            </button>
-                            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                                const p = page <= 3 ? i + 1 : page - 2 + i;
-                                if (p < 1 || p > totalPages) return null;
-                                return (
-                                    <button
-                                        key={p}
-                                        onClick={() => setPage(p)}
-                                        className={`btn btn-sm w-8 h-8 p-0 rounded-lg text-xs
-                      ${p === page ? 'btn-primary' : 'btn-secondary'}`}
-                                    >
-                                        {p}
-                                    </button>
-                                );
-                            })}
-                            <button
-                                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                                disabled={page === totalPages}
-                                className="btn-icon btn-secondary btn-sm"
-                            >
-                                <ChevronRight className="w-4 h-4" />
-                            </button>
+                        <div className="flex items-center gap-3 text-xs text-slate-500">
+                            <span>Trang {page}/{totalPages} · {filtered.length} kết quả</span>
+                            <div className="flex items-center gap-1.5 border-l border-slate-200 pl-3">
+                                <span>Hiển thị:</span>
+                                <select
+                                    className="bg-transparent font-medium text-slate-700 outline-none cursor-pointer"
+                                    value={pageSize}
+                                    onChange={(e) => {
+                                        setPageSize(Number(e.target.value));
+                                        setPage(1);
+                                    }}
+                                >
+                                    <option value={10}>10</option>
+                                    <option value={50}>50</option>
+                                    <option value={100}>100</option>
+                                    <option value={1000}>1000</option>
+                                </select>
+                            </div>
                         </div>
+                        {totalPages > 1 && (
+                            <div className="flex items-center gap-1">
+                                <button
+                                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                                    disabled={page === 1}
+                                    className="btn-icon btn-secondary btn-sm"
+                                >
+                                    <ChevronLeft className="w-4 h-4" />
+                                </button>
+                                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                    const p = page <= 3 ? i + 1 : page - 2 + i;
+                                    if (p < 1 || p > totalPages) return null;
+                                    return (
+                                        <button
+                                            key={p}
+                                            onClick={() => setPage(p)}
+                                            className={`btn btn-sm w-8 h-8 p-0 rounded-lg text-xs
+                      ${p === page ? 'btn-primary' : 'btn-secondary'}`}
+                                        >
+                                            {p}
+                                        </button>
+                                    );
+                                })}
+                                <button
+                                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={page === totalPages}
+                                    className="btn-icon btn-secondary btn-sm"
+                                >
+                                    <ChevronRight className="w-4 h-4" />
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>

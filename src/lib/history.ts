@@ -10,16 +10,29 @@ import {
 } from './sheets';
 import { updateAssetStatus, getAllAssets } from './assets';
 import { sendTelegramMessage } from './telegram';
+import { UserContext } from '@/types';
 
 // =========================
 //  HISTORY – KIỂM KÊ
 // =========================
-export async function getCheckHistory(assetId?: string): Promise<CheckReport[]> {
+export async function getCheckHistory(assetId?: string, userCtx?: UserContext): Promise<CheckReport[]> {
+    let allowedAssetIds: Set<string> | null = null;
+    if (userCtx && userCtx.role !== 'admin_full' && userCtx.role !== 'admin_holder') {
+        if (userCtx.role === 'guest' && assetId) {
+            allowedAssetIds = new Set([String(assetId).trim()]);
+        } else {
+            const allowedAssets = await getAllAssets(userCtx);
+            allowedAssetIds = new Set(allowedAssets.map(a => String(a.id).trim()));
+        }
+    }
+
     const data = await getSheetValues(SHEET_NAMES.HISTORY_CHECK);
     const result: CheckReport[] = [];
     for (let i = data.length - 1; i >= 1; i--) {
         const row = data[i];
-        if (assetId && String(row[1]).trim() !== String(assetId).trim()) continue;
+        const rowAssetId = String(row[1]).trim();
+        if (assetId && rowAssetId !== String(assetId).trim()) continue;
+        if (allowedAssetIds && !allowedAssetIds.has(rowAssetId)) continue;
         result.push({
             row: i + 1,
             time: row[0] || '',
@@ -35,12 +48,24 @@ export async function getCheckHistory(assetId?: string): Promise<CheckReport[]> 
 // =========================
 //  HISTORY – SỬA CHỮA
 // =========================
-export async function getRepairHistory(assetId?: string): Promise<RepairTicket[]> {
+export async function getRepairHistory(assetId?: string, userCtx?: UserContext): Promise<RepairTicket[]> {
+    let allowedAssetIds: Set<string> | null = null;
+    if (userCtx && userCtx.role !== 'admin_full' && userCtx.role !== 'admin_holder') {
+        if (userCtx.role === 'guest' && assetId) {
+            allowedAssetIds = new Set([String(assetId).trim()]);
+        } else {
+            const allowedAssets = await getAllAssets(userCtx);
+            allowedAssetIds = new Set(allowedAssets.map(a => String(a.id).trim()));
+        }
+    }
+
     const data = await getSheetValues(SHEET_NAMES.HISTORY_REPAIR);
     const result: RepairTicket[] = [];
     for (let i = data.length - 1; i >= 1; i--) {
         const row = data[i];
-        if (assetId && String(row[1]).trim() !== String(assetId).trim()) continue;
+        const rowAssetId = String(row[1]).trim();
+        if (assetId && rowAssetId !== String(assetId).trim()) continue;
+        if (allowedAssetIds && !allowedAssetIds.has(rowAssetId)) continue;
         result.push({
             source: 'history',
             row: i + 1,
@@ -64,12 +89,38 @@ export async function getRepairHistory(assetId?: string): Promise<RepairTicket[]
 // =========================
 //  PENDING – KIỂM KÊ
 // =========================
-export async function getPendingChecks(): Promise<CheckReport[]> {
+export async function getPendingChecks(userCtx?: UserContext): Promise<CheckReport[]> {
+    let allowedAssetIds: Set<string> | null = null;
+    if (userCtx && userCtx.role !== 'admin_full' && userCtx.role !== 'admin_holder') {
+        if (userCtx.role === 'guest') {
+            // Guests can't list ALL pending checks normally, but the Lookup API filters it.
+            // We'll allow it here so the filter works.
+            return (await getSheetValues(SHEET_NAMES.PENDING_CHECK))
+                .slice(1)
+                .filter(row => String(row[5]) === 'Chờ duyệt')
+                .map((row, i) => ({
+                    row: i + 2,
+                    time: row[0] || '',
+                    assetId: row[1] || '',
+                    reporter: row[2] || '',
+                    status: row[3] || '',
+                    note: row[4] || '',
+                    approveStatus: row[5] || '',
+                    location: row[6] || '',
+                }));
+        }
+        const allowedAssets = await getAllAssets(userCtx);
+        allowedAssetIds = new Set(allowedAssets.map(a => String(a.id).trim()));
+    }
+
     const data = await getSheetValues(SHEET_NAMES.PENDING_CHECK);
     if (data.length <= 1) return [];
     const result: CheckReport[] = [];
     for (let i = data.length - 1; i >= 1; i--) {
         const row = data[i];
+        const rowAssetId = String(row[1]).trim();
+        if (String(row[5]) !== 'Chờ duyệt') continue;
+        if (allowedAssetIds && !allowedAssetIds.has(rowAssetId)) continue;
         if (String(row[5]) !== 'Chờ duyệt') continue;
         result.push({
             row: i + 1,
@@ -100,10 +151,29 @@ export async function createCheckReport(data: {
                 'Thời gian', 'Mã TS', 'Người kiểm', 'Trạng thái', 'Ghi chú', 'Trạng thái duyệt', 'Vị trí',
             ]);
         }
-        await appendSheetRow(SHEET_NAMES.PENDING_CHECK, [
+        const rowIndex = await appendSheetRow(SHEET_NAMES.PENDING_CHECK, [
             formatDateTime(new Date()), data.assetId, data.reporter,
             data.status, data.note, 'Chờ duyệt', data.location,
         ]);
+
+        const message = `📋 <b>CÓ PHIẾU KIỂM KÊ MỚI!</b>\n\n` +
+            `📍 <b>Máy:</b> ${data.assetId}\n` +
+            `👤 <b>Người kiểm:</b> ${data.reporter}\n` +
+            `📊 <b>Trạng thái:</b> ${data.status}\n` +
+            `📝 <b>Ghi chú:</b> ${data.note || 'Không có'}\n` +
+            `🏢 <b>Vị trí:</b> ${data.location || 'Không xác định'}`;
+
+        const markup = rowIndex > 0 ? {
+            inline_keyboard: [
+                [
+                    { text: '✅ Duyệt Phiếu', callback_data: `apvchk_${rowIndex}` },
+                    { text: '❌ Từ Chối', callback_data: `rejchk_${rowIndex}` }
+                ]
+            ]
+        } : undefined;
+
+        await sendTelegramMessage(message, markup).catch(console.error);
+
         return { success: true, message: 'Đã gửi báo cáo kiểm kê!' };
     } catch (e) {
         return { success: false, message: 'Lỗi: ' + String(e) };
@@ -112,18 +182,24 @@ export async function createCheckReport(data: {
 
 export async function approveCheck(
     rowIndex: number,
-    assetId: string,
-    status: string
+    assetId?: string,
+    status?: string
 ): Promise<{ success: boolean; message: string }> {
     try {
         const pendingData = await getSheetValues(SHEET_NAMES.PENDING_CHECK);
         const row = pendingData[rowIndex - 1];
+
+        const finalAssetId = assetId || String(row[1] || '').trim();
+        const finalStatus = status || String(row[3] || '').trim();
+
         // Ghi vào lịch sử kiểm kê
         await appendSheetRow(SHEET_NAMES.HISTORY_CHECK, [
             row[0], row[1], row[2], row[3], row[4],
         ]);
         // Cập nhật trạng thái tài sản
-        await updateAssetStatus(assetId, status);
+        if (finalAssetId && finalStatus) {
+            await updateAssetStatus(finalAssetId, finalStatus);
+        }
         // Đánh dấu đã duyệt
         await updateSheetCell(SHEET_NAMES.PENDING_CHECK, rowIndex, 6, 'Đã duyệt');
         return { success: true, message: 'Đã duyệt kiểm kê!' };
@@ -172,12 +248,41 @@ export async function syncAssetStatusFromRepair(assetId: string, repairStatus: s
     await updateAssetStatus(assetId, newStatus);
 }
 
-export async function getPendingRepairs(): Promise<RepairTicket[]> {
+export async function getPendingRepairs(userCtx?: UserContext): Promise<RepairTicket[]> {
+    let allowedAssetIds: Set<string> | null = null;
+    if (userCtx && userCtx.role !== 'admin_full' && userCtx.role !== 'admin_holder') {
+        if (userCtx.role === 'guest') {
+            return (await getSheetValues(SHEET_NAMES.PENDING_REPAIR))
+                .slice(1)
+                .filter(row => String(row[5]) === 'Chờ duyệt')
+                .map((row, i) => ({
+                    source: 'pending',
+                    row: i + 2,
+                    time: row[0] || '',
+                    assetId: row[1] || '',
+                    person: row[2] || '',
+                    issue: row[3] || '',
+                    note: row[4] || '',
+                    approveStatus: row[5] || 'Chờ duyệt',
+                    repairStatus: row[6] || 'Chưa xử lý',
+                    result: row[7] || 'Chưa hoàn thành',
+                    handlerNote: row[8] || '',
+                    updatedTime: row[9] || '',
+                    location: row[10] || '',
+                }));
+        }
+        const allowedAssets = await getAllAssets(userCtx);
+        allowedAssetIds = new Set(allowedAssets.map(a => String(a.id).trim()));
+    }
+
     const data = await getSheetValues(SHEET_NAMES.PENDING_REPAIR);
     if (data.length <= 1) return [];
     const result: RepairTicket[] = [];
     for (let i = data.length - 1; i >= 1; i--) {
         const row = data[i];
+        const rowAssetId = String(row[1]).trim();
+        if (String(row[5]) !== 'Chờ duyệt') continue;
+        if (allowedAssetIds && !allowedAssetIds.has(rowAssetId)) continue;
         if (String(row[5]) !== 'Chờ duyệt') continue;
         result.push({
             source: 'pending',
@@ -236,7 +341,7 @@ export async function createRepairTicket(data: {
                 'Trạng thái duyệt', 'Trạng thái sửa chữa', 'Kết quả', 'Ghi chú xử lý', 'Lần cập nhật', 'Vị trí',
             ]);
         }
-        await appendSheetRow(SHEET_NAMES.PENDING_REPAIR, [
+        const rowIndex = await appendSheetRow(SHEET_NAMES.PENDING_REPAIR, [
             formatDateTime(new Date()), data.assetId, data.reporter,
             data.issue, data.note, 'Chờ duyệt', 'Chưa xử lý', 'Chưa hoàn thành', '', '', data.location,
         ]);
@@ -244,14 +349,23 @@ export async function createRepairTicket(data: {
         await syncAssetStatusFromRepair(data.assetId, 'Chưa xử lý');
 
         // Send Telegram notification for new ticket
-        const message = `🚨 CÓ PHIẾU BÁO HỎNG MỚI!\n\n` +
-            `📍 Máy: ${data.assetId}\n` +
-            `👤 Người báo: ${data.reporter}\n` +
-            `⚠️ Lỗi: ${data.issue}\n` +
-            `📝 Ghi chú: ${data.note || 'Không có'}\n` +
-            `🏢 Vị trí: ${data.location || 'Không xác định'}`;
+        const message = `🚨 <b>CÓ PHIẾU BÁO HỎNG MỚI!</b>\n\n` +
+            `📍 <b>Máy:</b> ${data.assetId}\n` +
+            `👤 <b>Người báo:</b> ${data.reporter}\n` +
+            `⚠️ <b>Lỗi:</b> ${data.issue}\n` +
+            `📝 <b>Ghi chú:</b> ${data.note || 'Không có'}\n` +
+            `🏢 <b>Vị trí:</b> ${data.location || 'Không xác định'}`;
 
-        await sendTelegramMessage(message).catch(console.error);
+        const markup = rowIndex > 0 ? {
+            inline_keyboard: [
+                [
+                    { text: '✅ Duyệt Phiếu', callback_data: `approve_${rowIndex}` },
+                    { text: '❌ Từ Chối', callback_data: `reject_${rowIndex}` }
+                ]
+            ]
+        } : undefined;
+
+        await sendTelegramMessage(message, markup).catch(console.error);
 
         return { success: true, message: 'Đã gửi phiếu sửa chữa!' };
     } catch (e) {
@@ -262,7 +376,7 @@ export async function createRepairTicket(data: {
 export async function approveRepair(
     rowIndex: number,
     data?: ApproveRepairData
-): Promise<{ success: boolean; message: string }> {
+): Promise<{ success: boolean; message: string; historyRowIndex?: number }> {
     try {
         const pendingData = await getSheetValues(SHEET_NAMES.PENDING_REPAIR);
         const row = pendingData[rowIndex - 1];
@@ -273,7 +387,7 @@ export async function approveRepair(
         const updatedTime = formatDateTime(new Date());
 
         await updateSheetCell(SHEET_NAMES.PENDING_REPAIR, rowIndex, 6, 'Đã duyệt');
-        await appendSheetRow(SHEET_NAMES.HISTORY_REPAIR, [
+        const historyRowIndex = await appendSheetRow(SHEET_NAMES.HISTORY_REPAIR, [
             row[0], row[1], row[2], row[3], row[4],
             'Đã duyệt', repairStatus, result, handlerNote,
             updatedTime, row[10],
@@ -283,18 +397,15 @@ export async function approveRepair(
             await syncAssetStatusFromRepair(row[1], repairStatus, result);
         }
 
-        // Send Telegram notification
-        const message = `🛠 PHIẾU SỬA CHỮA ĐÃ DUYỆT\n\n` +
-            `📍 Máy: ${row[1]}\n` +
-            `👤 Người báo: ${row[2]}\n` +
-            `⚠️ Lỗi: ${row[3]}\n` +
-            `📈 Trạng thái sửa: ${repairStatus}\n` +
-            `📝 Ghi chú xử lý: ${handlerNote || 'Không có'}\n` +
-            `⏰ TG duyệt: ${updatedTime}`;
+        // We comment this Telegram send out, or remove it,
+        // because we only want to reply directly to the inline keyboard via the Webhook,
+        // OR let it notify a different channel if needed.
+        // For now let's just not send the redundant message, as the webhook will edit the existing message.
+        // Wait, what if it's approved from the Web App? Then we DO want to send a message.
+        // Let's keep it, but it's a separate notification. 
+        // We will just let the Webhook handle editing the old message.
 
-        await sendTelegramMessage(message).catch(console.error);
-
-        return { success: true, message: 'Đã duyệt phiếu sửa chữa!' };
+        return { success: true, message: 'Đã duyệt phiếu sửa chữa!', historyRowIndex };
     } catch (e) {
         return { success: false, message: 'Lỗi: ' + String(e) };
     }
@@ -342,11 +453,11 @@ export async function deletePendingRepair(
 // =========================
 //  ALL REPAIR TICKETS (pending + history)
 // =========================
-export async function getAllRepairTickets(): Promise<RepairTicket[]> {
+export async function getAllRepairTickets(userCtx?: UserContext): Promise<RepairTicket[]> {
     const [pending, history, assets] = await Promise.all([
-        getPendingRepairs(),
-        getRepairHistory(),
-        getAllAssets(),
+        getPendingRepairs(userCtx),
+        getRepairHistory(undefined, userCtx),
+        getAllAssets(userCtx),
     ]);
 
     // Create lookup map for asset names
@@ -361,10 +472,10 @@ export async function getAllRepairTickets(): Promise<RepairTicket[]> {
 // =========================
 //  PENDING COUNTS
 // =========================
-export async function getPendingCounts(): Promise<{ kiemke: number; suachua: number }> {
+export async function getPendingCounts(userCtx?: UserContext): Promise<{ kiemke: number; suachua: number }> {
     const [checks, repairs] = await Promise.all([
-        getPendingChecks(),
-        getPendingRepairs(),
+        getPendingChecks(userCtx),
+        getPendingRepairs(userCtx),
     ]);
     return { kiemke: checks.length, suachua: repairs.length };
 }

@@ -21,11 +21,19 @@ function rowToAsset(row: string[], rowIndex: number): Asset {
     };
 }
 
-export async function getAllAssets(): Promise<Asset[]> {
+import { canViewAsset } from './auth';
+import { UserContext } from '@/types';
+
+export async function getAllAssets(userCtx?: UserContext): Promise<Asset[]> {
     const data = await getSheetValues(SHEET_NAMES.ASSETS);
     const result: Asset[] = [];
     for (let i = 1; i < data.length; i++) {
-        if (data[i][0]) result.push(rowToAsset(data[i], i + 1));
+        if (data[i][0]) {
+            const asset = rowToAsset(data[i], i + 1);
+            if (!userCtx || canViewAsset(userCtx, asset)) {
+                result.push(asset);
+            }
+        }
     }
     return result;
 }
@@ -40,9 +48,9 @@ export async function getAssetById(assetId: string): Promise<Asset | null> {
     return null;
 }
 
-export async function searchAssets(keyword: string): Promise<Asset[]> {
+export async function searchAssets(keyword: string, userCtx?: UserContext): Promise<Asset[]> {
     const kw = keyword.toLowerCase();
-    const all = await getAllAssets();
+    const all = await getAllAssets(userCtx);
     return all.filter(
         (a) =>
             a.id.toLowerCase().includes(kw) ||
@@ -53,12 +61,27 @@ export async function searchAssets(keyword: string): Promise<Asset[]> {
 
 export async function createAsset(
     data: Omit<Asset, 'row'>
-): Promise<{ success: boolean; message: string }> {
-    const existing = await getAssetById(data.id);
-    if (existing) return { success: false, message: 'Mã tài sản đã tồn tại!' };
+): Promise<{ success: boolean; message: string; assetId?: string }> {
+    let finalId = data.id.trim();
+    const existing = await getAssetById(finalId);
+
+    if (existing) {
+        // Find next suffix
+        let counter = 1;
+        while (true) {
+            const nextId = `${finalId} (${counter})`;
+            const check = await getAssetById(nextId);
+            if (!check) {
+                finalId = nextId;
+                break;
+            }
+            counter++;
+            if (counter > 100) break; // safety
+        }
+    }
 
     await appendSheetRow(SHEET_NAMES.ASSETS, [
-        data.id,
+        finalId,
         data.name,
         data.location,
         data.year,
@@ -67,7 +90,7 @@ export async function createAsset(
         data.specificLocation || '',
         data.originalPrice ? String(data.originalPrice) : '',
     ]);
-    return { success: true, message: 'Đã thêm tài sản mới!' };
+    return { success: true, message: existing ? `Đã thêm tài sản mới với mã ${finalId} (do trùng mã gốc)` : 'Đã thêm tài sản mới!', assetId: finalId };
 }
 
 export async function updateAsset(

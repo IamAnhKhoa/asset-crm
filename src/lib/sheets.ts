@@ -11,11 +11,19 @@ export const SHEET_NAMES = {
     PENDING_CHECK: 'ChoXacNhanKiemKe',
     PENDING_REPAIR: 'ChoXacNhanSuaChua',
     NOTIFICATIONS: 'ThongBao',
+    GIA_SUA_CHUA: 'GiaSuaChua',
+    NGUOI_DUNG: 'NguoiDung',
 } as const;
+
+import { formatDateTime, formatDate, parseViDate } from './date-utils';
+export { formatDateTime, formatDate, parseViDate };
 
 function getAuth() {
     const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-    const key = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+    // Handle both literal \n and escaped \\n, and remove any accidental quotes
+    let key = process.env.GOOGLE_PRIVATE_KEY || '';
+    if (key.startsWith('"') && key.endsWith('"')) key = key.slice(1, -1);
+    key = key.replace(/\\n/g, '\n');
 
     if (!email || !key) {
         throw new Error(
@@ -37,22 +45,36 @@ export async function getSheetsClient() {
 }
 
 export async function getSheetValues(sheetName: string): Promise<string[][]> {
-    const sheets = await getSheetsClient();
-    const res = await sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: sheetName,
-    });
-    return (res.data.values as string[][]) || [];
+    try {
+        const sheets = await getSheetsClient();
+        const res = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: sheetName,
+        });
+        return (res.data.values as string[][]) || [];
+    } catch (e: any) {
+        // If sheet not found or range error, return empty instead of crashing the app
+        console.error(`Error reading sheet ${sheetName}:`, e?.message);
+        if (e?.code === 400 || e?.message?.includes('not found')) {
+            return [];
+        }
+        throw e;
+    }
 }
 
-export async function appendSheetRow(sheetName: string, values: (string | number | Date | null)[]) {
+export async function appendSheetRow(sheetName: string, values: (string | number | Date | null)[]): Promise<number> {
     const sheets = await getSheetsClient();
-    await sheets.spreadsheets.values.append({
+    const response = await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
         range: sheetName,
         valueInputOption: 'USER_ENTERED',
         requestBody: { values: [values.map((v) => (v instanceof Date ? formatDateTime(v) : v ?? ''))] },
     });
+
+    // Extract row index from response.data.updates.updatedRange (e.g., 'SheetName!A15:G15')
+    const range = response.data.updates?.updatedRange || '';
+    const match = range.match(/[A-Z]+(\d+)/);
+    return match ? parseInt(match[1], 10) : -1;
 }
 
 export async function updateSheetCell(
@@ -118,46 +140,3 @@ export async function deleteSheetRow(sheetName: string, rowIndex: number) {
 // =========================
 //  FORMAT HELPERS
 // =========================
-export function formatDateTime(d: Date | string): string {
-    const date = d instanceof Date ? d : new Date(d);
-    const options: Intl.DateTimeFormatOptions = {
-        timeZone: 'Asia/Ho_Chi_Minh',
-        day: '2-digit', month: '2-digit', year: 'numeric',
-        hour: '2-digit', minute: '2-digit', hour12: false
-    };
-    const parts = new Intl.DateTimeFormat('en-GB', options).formatToParts(date);
-    const p: Record<string, string> = {};
-    parts.forEach(({ type, value }) => { p[type] = value; });
-
-    // In some environments, hour might be formatted as 24:xx instead of 00:xx
-    let hh = p.hour;
-    if (hh === '24') hh = '00';
-
-    return `${p.day}/${p.month}/${p.year} ${hh}:${p.minute}`;
-}
-
-export function formatDate(d: Date | string): string {
-    const date = d instanceof Date ? d : new Date(d);
-    const options: Intl.DateTimeFormatOptions = {
-        timeZone: 'Asia/Ho_Chi_Minh',
-        day: '2-digit', month: '2-digit', year: 'numeric'
-    };
-    const parts = new Intl.DateTimeFormat('en-GB', options).formatToParts(date);
-    const p: Record<string, string> = {};
-    parts.forEach(({ type, value }) => { p[type] = value; });
-    return `${p.day}/${p.month}/${p.year}`;
-}
-
-export function parseViDate(str: string): Date | null {
-    if (!str) return null;
-    // dd/mm/yyyy hh:mm or dd/mm/yyyy
-    const parts = str.split(' ');
-    const dateParts = parts[0].split('/');
-    if (dateParts.length !== 3) return null;
-    const [dd, mm, yyyy] = dateParts;
-    const timeParts = parts[1] ? parts[1].split(':') : ['0', '0'];
-    return new Date(
-        parseInt(yyyy), parseInt(mm) - 1, parseInt(dd),
-        parseInt(timeParts[0]), parseInt(timeParts[1])
-    );
-}

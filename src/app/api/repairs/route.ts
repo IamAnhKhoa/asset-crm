@@ -1,11 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllRepairTickets, getPendingRepairs, approveRepair, rejectRepair } from '@/lib/history';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/authOptions';
+import { UserContext } from '@/types';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
     try {
-        const data = await getAllRepairTickets();
+        const session = await getServerSession(authOptions);
+        if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const userCtx: UserContext = {
+            role: (session.user as any).role || 'user_basic',
+            phongBan: (session.user as any).phongBan,
+            tenChon: (session.user as any).tenChon,
+        };
+
+        const data = await getAllRepairTickets(userCtx);
         return NextResponse.json(data);
     } catch (e) {
         return NextResponse.json({ error: String(e) }, { status: 500 });
