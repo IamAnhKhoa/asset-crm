@@ -1,16 +1,17 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { CheckCircle, Wrench, Clock, MapPin, Calendar, AlertTriangle, Loader2, ChevronDown, ChevronUp, Send, Package, Search, UserCircle } from 'lucide-react';
+import { CheckCircle, Wrench, Clock, MapPin, Calendar, AlertTriangle, Loader2, ChevronDown, ChevronUp, Send, Package, Search, UserCircle, Truck } from 'lucide-react';
 import Link from 'next/link';
 import { QRCodeSVG } from 'qrcode.react';
 
 interface AssetInfo {
-    id: string; name: string; location: string; year: number; status: string; person?: string; specificLocation?: string; originalPrice?: number;
+    id: string; name: string; location: string; year: number; status: string; quantity?: number; person?: string; specificLocation?: string; originalPrice?: number;
 }
 interface CheckReport {
     time: string; reporter: string; status: string; note: string;
 }
 interface RepairTicket {
+    source?: string;
     time: string; person: string; issue: string; approveStatus: string; repairStatus: string; handlerNote?: string; note?: string; updatedTime?: string; result?: string; location?: string;
 }
 interface LookupData {
@@ -32,6 +33,7 @@ const STATUS_COLORS: Record<string, string> = {
     'Từ chối': 'bg-slate-100 text-slate-600 border-slate-200',
     'Chờ duyệt': 'bg-indigo-50 text-indigo-700 border-indigo-100',
     'Đã duyệt': 'bg-emerald-50 text-emerald-700 border-emerald-100',
+    'Đã giao đơn vị ngoài xử lý': 'bg-purple-50 text-purple-700 border-purple-200',
 };
 
 function Chip({ label }: { label: string }) {
@@ -118,7 +120,7 @@ export default function LookupPage({ params }: { params: { id: string } }) {
                     .then(r => r.json())
                     .then(setData);
             } else {
-                setFormError(result.message || 'Có lỗi xảy ra');
+                setFormError(result.message || result.error || 'Có lỗi xảy ra');
             }
         } finally { setSubmitting(false); }
     }
@@ -174,6 +176,59 @@ export default function LookupPage({ params }: { params: { id: string } }) {
     const hasPendingCheck = pendingChecks && pendingChecks.length > 0;
     const hasPendingRepair = pendingRepairs && pendingRepairs.length > 0;
 
+    let externalDays = 0;
+    if (asset.status === 'Đã giao đơn vị ngoài xử lý' && recentRepairs && recentRepairs.length > 0) {
+        const latestRepair = recentRepairs[0];
+        const dateStr = latestRepair.updatedTime || latestRepair.time;
+        if (dateStr) {
+            const parts = dateStr.split(/[\s/:]+/);
+            if (parts.length >= 3) {
+                const [day, month, year] = parts;
+                const d = new Date(Number(year), Number(month) - 1, Number(day));
+                if (!isNaN(d.getTime())) {
+                    // Caculate diff from 0:00 of the day it was updated to now. If today, it's 0 days.
+                    // If we want "1 ngày" on the first day, add +1, or keep it strict. 
+                    // Let's use strict day difference
+                    externalDays = Math.max(0, Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24)));
+                }
+            }
+        }
+    }
+
+    let dotColor = 'bg-emerald-500';
+    let textColor = 'text-emerald-600';
+    let statusText = 'Trạng thái ổn định';
+
+    if (hasPendingRepair) {
+        dotColor = 'bg-rose-500';
+        textColor = 'text-rose-600';
+        statusText = 'Đang báo hỏng';
+    } else if (asset.status === 'Mất / Thất lạc') {
+        dotColor = 'bg-rose-500';
+        textColor = 'text-rose-600';
+        statusText = 'Đã thất lạc';
+    } else if (asset.status === 'Thanh lý') {
+        dotColor = 'bg-slate-500';
+        textColor = 'text-slate-600';
+        statusText = 'Đã thanh lý';
+    } else if (asset.status === 'Hỏng') {
+        dotColor = 'bg-rose-500';
+        textColor = 'text-rose-600';
+        statusText = 'Đã hỏng';
+    } else if (asset.status === 'Cần sửa') {
+        dotColor = 'bg-amber-500';
+        textColor = 'text-amber-600';
+        statusText = 'Cần sửa chữa';
+    } else if (asset.status === 'Đang sửa chữa') {
+        dotColor = 'bg-blue-500';
+        textColor = 'text-blue-600';
+        statusText = 'Đang sửa chữa';
+    } else if (asset.status === 'Đã giao đơn vị ngoài xử lý') {
+        dotColor = 'bg-purple-500';
+        textColor = 'text-purple-600';
+        statusText = 'Đang xử lý ngoài';
+    }
+
     const DetailModal = ({ title, show, onClose, children }: { title: string, show: boolean, onClose: () => void, children: React.ReactNode }) => {
         if (!show) return null;
         return (
@@ -215,6 +270,36 @@ export default function LookupPage({ params }: { params: { id: string } }) {
                 </div>
             </div>
 
+            {/* Status Banner - High Visibility */}
+            {(hasPendingRepair || asset.status === 'Đang sửa chữa' || asset.status === 'Cần sửa' || asset.status === 'Đã giao đơn vị ngoài xử lý' || asset.status === 'Hỏng' || asset.status === 'Mất / Thất lạc' || asset.status === 'Thanh lý') && (
+                <div className={`px-4 py-4 text-white animate-in slide-in-from-top duration-500 ${asset.status === 'Đã giao đơn vị ngoài xử lý' ? 'bg-purple-600' : (asset.status === 'Hỏng' || asset.status === 'Mất / Thất lạc' || asset.status === 'Thanh lý' || hasPendingRepair) ? 'bg-rose-600' : 'bg-indigo-600'}`}>
+                    <div className="max-w-lg mx-auto flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center shrink-0 border border-white/30 shadow-inner">
+                            {asset.status === 'Đã giao đơn vị ngoài xử lý' ? <Truck className="w-6 h-6" /> : asset.status === 'Đang sửa chữa' ? <Loader2 className="w-6 h-6 animate-spin" /> : (asset.status === 'Hỏng' || asset.status === 'Mất / Thất lạc' || asset.status === 'Thanh lý') ? <AlertTriangle className="w-6 h-6" /> : <Wrench className="w-6 h-6" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-70 mb-0.5">Trạng thái hiện tại</p>
+                            <h3 className="text-lg font-black leading-tight tracking-tight">
+                                {asset.status === 'Đã giao đơn vị ngoài xử lý' ? 'ĐANG GIAO ĐƠN VỊ NGOÀI XỬ LÝ' :
+                                    asset.status === 'Đang sửa chữa' ? 'ĐANG TIẾN HÀNH SỬA CHỮA' :
+                                        asset.status === 'Cần sửa' ? 'TÀI SẢN ĐANG ĐỢI SỬA CHỮA' :
+                                            asset.status === 'Hỏng' ? 'TÀI SẢN BỊ HỎNG' :
+                                                asset.status === 'Mất / Thất lạc' ? 'TÀI SẢN ĐÃ THẤT LẠC' :
+                                                    asset.status === 'Thanh lý' ? 'TÀI SẢN ĐÃ THANH LÝ' :
+                                                        'ĐÃ GỬI PHIẾU BÁO HỎNG'}
+                            </h3>
+                            <p className="text-xs font-medium opacity-80 mt-1">
+                                {asset.status === 'Đã giao đơn vị ngoài xử lý'
+                                    ? (externalDays > 0 ? `Đã bàn giao đi ${externalDays} ngày. Vui lòng chờ đối tác xử lý.` : 'Đang bàn giao cho đối tác ngoài xử lý. Cập nhật mới nhất sẽ hiện ở dưới.')
+                                    : (asset.status === 'Hỏng' || asset.status === 'Mất / Thất lạc' || asset.status === 'Thanh lý')
+                                        ? 'Tài sản không còn khả năng sử dụng hoặc đã không còn ở vị trí lưu giữ.'
+                                        : 'Vui lòng chờ kỹ thuật viên xử lý. Cập nhật mới nhất sẽ hiện ở dưới.'}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className="max-w-lg mx-auto px-4 py-6 space-y-6">
                 {/* Visual Identity Card */}
                 <div className="relative">
@@ -223,9 +308,9 @@ export default function LookupPage({ params }: { params: { id: string } }) {
                         {/* Status bar */}
                         <div className="flex items-center justify-between px-6 pt-5 pb-2">
                             <div className="flex items-center gap-2">
-                                <div className={`w-2 h-2 rounded-full animate-pulse ${hasPendingRepair ? 'bg-rose-500' : 'bg-emerald-500'}`}></div>
-                                <span className={`text-[10px] font-black uppercase tracking-widest ${hasPendingRepair ? 'text-rose-600' : 'text-emerald-600'}`}>
-                                    {hasPendingRepair ? 'Đang báo hỏng' : 'Trạng thái ổn định'}
+                                <div className={`w-2 h-2 rounded-full animate-pulse ${dotColor}`}></div>
+                                <span className={`text-[10px] font-black uppercase tracking-widest ${textColor}`}>
+                                    {statusText}
                                 </span>
                             </div>
                             <Chip label={asset.status} />
@@ -268,19 +353,38 @@ export default function LookupPage({ params }: { params: { id: string } }) {
                                 <p className="text-sm font-semibold text-slate-800">{asset.year || '—'}</p>
                             </div>
                             <div className="space-y-1">
+                                <div className="flex items-center gap-1.5 text-slate-400">
+                                    <Package className="w-3.5 h-3.5" />
+                                    <span className="text-[10px] uppercase font-bold tracking-wider">Số lượng</span>
+                                </div>
+                                <p className="text-sm font-bold text-slate-800">{asset.quantity || 1}</p>
+                            </div>
+                            <div className="space-y-1">
+                                <div className="flex items-center gap-1.5 text-slate-400">
+                                    <Send className="w-3.5 h-3.5 scale-75" />
+                                    <span className="text-[10px] uppercase font-bold tracking-wider">Đơn giá</span>
+                                </div>
+                                <p className="text-sm font-semibold text-slate-800">{formatCurrency(asset.originalPrice)}</p>
+                            </div>
+                            <div className="space-y-1">
                                 <div className="flex items-center gap-1.5 text-indigo-400">
                                     <Package className="w-3.5 h-3.5" />
-                                    <span className="text-[10px] uppercase font-bold tracking-wider">Nguyên giá</span>
+                                    <span className="text-[10px] uppercase font-bold tracking-wider">Tổng nguyên giá</span>
                                 </div>
-                                <p className="text-sm font-semibold text-indigo-900">{formatCurrency(asset.originalPrice)}</p>
+                                <p className="text-sm font-bold text-indigo-900">
+                                    {formatCurrency((asset.originalPrice || 0) * (asset.quantity || 1))}
+                                </p>
                             </div>
                             <div className="space-y-1">
                                 <div className="flex items-center gap-1.5 text-emerald-400">
                                     <CheckCircle className="w-3.5 h-3.5" />
-                                    <span className="text-[10px] uppercase font-bold tracking-wider">Giá trị còn lại</span>
+                                    <span className="text-[10px] uppercase font-bold tracking-wider">Tổng GT còn lại</span>
                                 </div>
                                 <p className="text-sm font-black text-emerald-700">
-                                    {formatCurrency(calculateRemainingValue(asset.originalPrice, asset.year))}
+                                    {(() => {
+                                        const unitRem = calculateRemainingValue(asset.originalPrice, asset.year);
+                                        return unitRem ? formatCurrency(unitRem * (asset.quantity || 1)) : '—';
+                                    })()}
                                 </p>
                             </div>
                             <div className="space-y-1 col-span-2">
@@ -488,11 +592,13 @@ export default function LookupPage({ params }: { params: { id: string } }) {
 
                                     <div
                                         onClick={() => setSelectedRepair(r)}
-                                        className="relative z-10 bg-white rounded-[1.75rem] border border-slate-200/60 shadow-sm group-hover:shadow-md group-hover:border-indigo-100 transition-all p-5 cursor-pointer active:scale-[0.98]"
+                                        className={`relative z-10 bg-white rounded-[1.75rem] border shadow-sm group-hover:shadow-md transition-all p-5 cursor-pointer active:scale-[0.98] 
+                                            ${r.source === 'pending' ? 'border-amber-200 bg-amber-50/10' : 'border-slate-200/60 group-hover:border-indigo-100'}`}
                                     >
                                         <div className="flex items-start justify-between mb-4">
                                             <div className="flex items-center gap-3">
-                                                <div className="w-12 h-12 rounded-2xl bg-slate-50 flex flex-col items-center justify-center border border-slate-100 shrink-0">
+                                                <div className={`w-12 h-12 rounded-2xl flex flex-col items-center justify-center border shrink-0 
+                                                    ${r.source === 'pending' ? 'bg-amber-100/50 border-amber-200' : 'bg-slate-50 border-slate-100'}`}>
                                                     <span className="text-[10px] font-black text-slate-400 leading-none mb-1">{r.time.split('/')[0]}</span>
                                                     <span className="text-[9px] font-bold text-slate-300 uppercase leading-none">TH {r.time.split('/')[1]}</span>
                                                 </div>
@@ -500,17 +606,28 @@ export default function LookupPage({ params }: { params: { id: string } }) {
                                                     <div className="flex items-center gap-2 mb-1">
                                                         <Clock className="w-3 h-3 text-slate-400" />
                                                         <span className="text-[10px] font-bold font-mono text-slate-400">{r.time}</span>
+                                                        {r.source === 'pending' && <span className="bg-amber-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full animate-pulse">PHIẾU MỚI</span>}
                                                     </div>
                                                     <Chip label={r.approveStatus === 'Chờ duyệt' ? (r.repairStatus || 'Chờ duyệt') : r.approveStatus} />
                                                 </div>
                                             </div>
                                         </div>
 
-                                        <div className="space-y-3 bg-slate-50/50 p-4 rounded-2xl border border-slate-100/50">
+                                        <div className="space-y-3 bg-white/50 p-4 rounded-2xl border border-slate-100/50">
                                             <div className="flex gap-3">
                                                 <span className="text-[9px] font-black text-slate-400 uppercase w-16 shrink-0 pt-1">Sự cố</span>
                                                 <p className="text-sm font-bold text-slate-700 leading-snug">{r.issue}</p>
                                             </div>
+
+                                            {/* Progress Steps for Active Tickets */}
+                                            {r.approveStatus !== 'Từ chối' && (
+                                                <div className="pt-2 flex items-center gap-1.5">
+                                                    <div className={`h-1 flex-1 rounded-full ${r.source === 'pending' ? 'bg-amber-400' : 'bg-emerald-500'}`}></div>
+                                                    <div className={`h-1 flex-1 rounded-full ${r.approveStatus === 'Đã duyệt' ? (r.source === 'pending' ? 'bg-amber-400' : 'bg-emerald-500') : 'bg-slate-100'}`}></div>
+                                                    <div className={`h-1 flex-1 rounded-full ${r.repairStatus === 'Đã sửa xong' ? 'bg-emerald-500' : 'bg-slate-100'}`}></div>
+                                                </div>
+                                            )}
+
                                             <div className="flex gap-3">
                                                 <span className="text-[9px] font-black text-slate-400 uppercase w-16 shrink-0">Người báo</span>
                                                 <p className="text-xs font-medium text-slate-600">{r.person}</p>
