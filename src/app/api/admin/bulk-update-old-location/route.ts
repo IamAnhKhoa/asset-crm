@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
 
         // 2. Try secret header (for local scripts)
         const secret = req.headers.get('x-admin-secret');
-        if (secret === 'import-book1-secret-2026') {
+        if (secret === process.env.ADMIN_SECRET) {
             isAdmin = true;
         }
 
