@@ -29,15 +29,16 @@ export async function getDashboardStats(): Promise<Dashboard> {
     for (const a of assets) {
         const loc = a.location || '';
         if (loc) { depts[loc] = (depts[loc] || 0) + 1; }
-        stats.total++;
+        stats.total += (a.quantity || 1);
         if (a.originalPrice) {
-            stats.totalOriginalValue! += a.originalPrice;
+            const qty = a.quantity || 1;
+            stats.totalOriginalValue! += a.originalPrice * qty;
             const currentYear = new Date().getFullYear();
             const yearNum = Number(a.year);
             if (!isNaN(yearNum)) {
                 const yearsUsed = currentYear - yearNum;
                 const remainingPercent = Math.max(0, 1 - 0.2 * yearsUsed);
-                stats.totalRemainingValue! += a.originalPrice * remainingPercent;
+                stats.totalRemainingValue! += a.originalPrice * qty * remainingPercent;
             }
         }
         const st = (a.status || '').trim();

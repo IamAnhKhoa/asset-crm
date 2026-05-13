@@ -1,40 +1,24 @@
 import { NextResponse } from 'next/server';
-import { isKVConfigured } from '@/lib/kv-cache';
-import { kv } from '@vercel/kv';
-import { getSheetsClient, SPREADSHEET_ID, SHEET_NAMES } from '@/lib/sheets';
+import { supabase } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
     const status: any = {
-        kv: 'unknown',
-        sheets: 'unknown',
-        version: '1.0.2-fix-duplicates',
+        database: 'unknown',
+        version: '2.0.0-supabase-realtime',
         timestamp: new Date().toISOString()
     };
 
-    // 1. Check KV
-    if (!isKVConfigured()) {
-        status.kv = 'not configured';
-    } else {
-        try {
-            await kv.ping();
-            status.kv = 'ok';
-        } catch (e: any) {
-            status.kv = `error: ${e.message}`;
-        }
-    }
-
-    // 2. Check Sheets
+    // Check Supabase
     try {
-        const sheets = await getSheetsClient();
-        await sheets.spreadsheets.get({
-            spreadsheetId: SPREADSHEET_ID,
-            fields: 'spreadsheetId'
-        });
-        status.sheets = 'ok';
+        const { count, error } = await supabase
+            .from('assets')
+            .select('*', { count: 'exact', head: true });
+        if (error) throw error;
+        status.database = `ok (${count} assets)`;
     } catch (e: any) {
-        status.sheets = `error: ${e.message}`;
+        status.database = `error: ${e.message}`;
     }
 
     return NextResponse.json(status);

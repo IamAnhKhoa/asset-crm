@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/authOptions';
-import { SHEET_NAMES, getSheetValues, updateSheetCell } from '@/lib/sheets';
-import { purgePattern, purgeCache } from '@/lib/kv-cache';
+import { supabase } from '@/lib/supabase';
 
 export async function POST(req: NextRequest) {
     try {
@@ -11,38 +10,50 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const data = await getSheetValues(SHEET_NAMES.ASSETS);
+        const { data: assets, error } = await supabase
+            .from('assets')
+            .select('id')
+            .order('id', { ascending: true });
+
+        if (error) throw error;
+
         const idCounts: Record<string, number> = {};
         let fixes = 0;
 
-        // Pass 1: Count initial IDs
-        for (let i = 1; i < data.length; i++) {
-            const id = (data[i][0] || '').trim();
+        // Count IDs
+        for (const asset of (assets || [])) {
+            const id = (asset.id || '').trim();
             if (id) idCounts[id] = (idCounts[id] || 0) + 1;
         }
 
-        // Pass 2: Suffix duplicates
+        // Fix duplicates
         const processed: Record<string, number> = {};
-        for (let i = 1; i < data.length; i++) {
-            const id = (data[i][0] || '').trim();
+        for (const asset of (assets || [])) {
+            const id = (asset.id || '').trim();
             if (!id) continue;
 
             processed[id] = (processed[id] || 0) + 1;
 
-            // If this is a duplicate (total count > 1) AND it's not the first occurrence
             if (idCounts[id] > 1 && processed[id] > 1) {
                 const newId = `${id} (${processed[id] - 1})`;
-                await updateSheetCell(SHEET_NAMES.ASSETS, i + 1, 1, newId);
-                fixes++;
+                // In Supabase with TEXT primary key, we need to update the ID
+                // This requires delete + insert since PK can't be updated
+                const { data: oldRow } = await supabase
+                    .from('assets')
+                    .select('*')
+                    .eq('id', id)
+                    .limit(1)
+                    .single();
+
+                if (oldRow) {
+                    await supabase.from('assets').insert({ ...oldRow, id: newId });
+                    await supabase.from('assets').delete().eq('id', id).limit(1);
+                    fixes++;
+                }
             }
         }
 
-        if (fixes > 0) {
-            await Promise.all([
-                purgePattern('assets:'),
-                purgeCache('dashboard')
-            ]);
-        }
+
 
         return NextResponse.json({ success: true, fixes });
     } catch (e: any) {

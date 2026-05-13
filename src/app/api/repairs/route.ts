@@ -51,3 +51,27 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: String(e) }, { status: 500 });
     }
 }
+
+export async function DELETE(req: NextRequest) {
+    try {
+        const session = await getServerSession(authOptions);
+        if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const role = (session.user as any).role;
+        if (role !== 'admin_full' && role !== 'admin_holder') {
+            return NextResponse.json({ error: 'Không có quyền xóa' }, { status: 403 });
+        }
+
+        const body = await req.json();
+        const { row, source } = body;
+        if (!row) return NextResponse.json({ error: 'Missing row ID' }, { status: 400 });
+
+        const { supabase } = await import('@/lib/supabase');
+        const table = source === 'pending' ? 'pending_repairs' : 'repair_history';
+        const { error } = await supabase.from(table).delete().eq('id', row);
+
+        if (error) throw error;
+        return NextResponse.json({ success: true, message: 'Đã xóa phiếu!' });
+    } catch (e) {
+        return NextResponse.json({ error: String(e) }, { status: 500 });
+    }
+}

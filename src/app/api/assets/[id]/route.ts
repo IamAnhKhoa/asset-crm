@@ -37,8 +37,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         }
 
         const body = await req.json();
-        const { name, location, year, status, person, specificLocation, originalPrice } = body;
-        const result = await updateAsset(id, { name, location, year, status, person, specificLocation, originalPrice });
+        const { name, location, year, quantity, status, person, specificLocation, oldLocation, originalPrice } = body;
+        const result = await updateAsset(id, { name, location, year, quantity: Number(quantity), status, person, specificLocation, oldLocation, originalPrice });
         if (!result.success) {
             return NextResponse.json({ error: result.message }, { status: 400 });
         }

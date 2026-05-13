@@ -101,13 +101,7 @@ export function Sidebar({ mobileOpen, setMobileOpen }: { mobileOpen: boolean, se
                         <ChevronRight className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${collapsed ? '' : 'rotate-180'}`} />
                     </button>
 
-                    {/* Mobile Close Btn */}
-                    <button
-                        onClick={() => setMobileOpen(false)}
-                        className="ml-auto btn-icon btn-ghost w-8 h-8 md:hidden text-slate-400 hover:text-slate-600"
-                    >
-                        <X className="w-5 h-5" />
-                    </button>
+
                 </div>
 
                 {/* Nav */}

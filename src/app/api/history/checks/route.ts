@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCheckHistory, approveCheck, rejectCheck } from '@/lib/history';
+import { getCheckHistory, approveCheck, rejectCheck, deleteCheckHistory } from '@/lib/history';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/authOptions';
 import { UserContext } from '@/types';
-import { getWithSWR, purgeCache, purgePattern } from '@/lib/kv-cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,10 +19,7 @@ export async function GET(req: NextRequest) {
         const { searchParams } = new URL(req.url);
         const assetId = searchParams.get('assetId') || 'all';
 
-        const cacheKey = `history:checks:${userCtx.role}:${userCtx.phongBan || 'all'}:${assetId}`;
-
-        const data = await getWithSWR(cacheKey, () => getCheckHistory(assetId === 'all' ? undefined : assetId, userCtx), 10, 2);
-
+        const data = await getCheckHistory(assetId === 'all' ? undefined : assetId, userCtx);
         return NextResponse.json(data);
     } catch (e: any) {
         console.error('[API History Checks] Fatal error:', e);
@@ -42,16 +38,22 @@ export async function PATCH(req: NextRequest) {
         if (action === 'approve') result = await approveCheck(row, assetId, status);
         else return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
 
-        // Invalidate cache
-        await Promise.all([
-            purgePattern('history:checks'),
-            purgeCache('dashboard'),
-            assetId ? purgeCache(`lookup:${assetId}`) : Promise.resolve()
-        ]).catch(e => console.warn('[API Checks] Cache purge failed:', e));
-
         return NextResponse.json(result);
     } catch (e: any) {
         console.error('[API Checks] Fatal error:', e);
         return NextResponse.json({ error: e?.message || String(e) }, { status: 500 });
     }
 }
+
+export async function DELETE(req: NextRequest) {
+    try {
+        const { row } = await req.json();
+        if (!row) return NextResponse.json({ error: 'Missing row' }, { status: 400 });
+        const result = await deleteCheckHistory(row);
+        return NextResponse.json(result);
+    } catch (e: any) {
+        console.error('[API History Checks DELETE] error:', e);
+        return NextResponse.json({ error: e?.message || String(e) }, { status: 500 });
+    }
+}
+

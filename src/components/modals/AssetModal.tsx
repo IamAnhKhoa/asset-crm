@@ -40,7 +40,9 @@ export function AssetModal({ asset, isEdit, onClose, onSaved }: Props) {
         status: asset?.status || 'Đang sử dụng',
         person: asset?.person || (isPersonLocked ? userName : ''),
         specificLocation: asset?.specificLocation || '',
+        oldLocation: asset?.oldLocation || '',
         originalPrice: asset?.originalPrice ? String(asset?.originalPrice) : '',
+        quantity: String(asset?.quantity || 1),
     });
 
     const [customLocation, setCustomLocation] = useState('');
@@ -125,7 +127,7 @@ export function AssetModal({ asset, isEdit, onClose, onSaved }: Props) {
             const r = await fetch(url, {
                 method,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...form, location: finalLocation, person: finalPerson, isEdit }),
+                body: JSON.stringify({ ...form, quantity: Number(form.quantity) || 1, location: finalLocation, person: finalPerson, isEdit }),
             });
             const data = await r.json();
             if (!data.success) { setError(data.message || 'Có lỗi xảy ra'); return; }
@@ -224,6 +226,16 @@ export function AssetModal({ asset, isEdit, onClose, onSaved }: Props) {
                             <input className="input" value={form.specificLocation} onChange={e => set('specificLocation', e.target.value)} placeholder="VD: Góc trái kho" />
                         </div>
                     </div>
+                    <div>
+                        <label className="label">Nơi cũ <span className="text-slate-400 font-normal text-xs">(chỉ admin)</span></label>
+                        <input
+                            className="input"
+                            value={form.oldLocation}
+                            onChange={e => set('oldLocation', e.target.value)}
+                            placeholder="VD: KHNV, TYT Tân An Hội..."
+                            disabled={isBasicUser}
+                        />
+                    </div>
                     <div className="grid grid-cols-2 gap-3">
                         <div>
                             <label className="label">Năm mua</label>
@@ -232,6 +244,10 @@ export function AssetModal({ asset, isEdit, onClose, onSaved }: Props) {
                         <div>
                             <label className="label">Nguyên giá (VNĐ)</label>
                             <input type="number" className="input" value={form.originalPrice} onChange={e => set('originalPrice', e.target.value)} min={0} placeholder="VD: 15000000" />
+                        </div>
+                        <div>
+                            <label className="label">Số lượng</label>
+                            <input type="number" className="input" value={form.quantity} onChange={e => set('quantity', e.target.value)} min={1} />
                         </div>
                         <div>
                             <label className="label">Trạng thái</label>

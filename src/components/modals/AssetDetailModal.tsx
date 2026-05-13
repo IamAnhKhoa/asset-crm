@@ -1,7 +1,7 @@
 'use client';
 import { Asset, CheckReport, RepairTicket } from '@/types';
 import { useEffect, useState } from 'react';
-import { X, Pencil, Package, Clock, Wrench } from 'lucide-react';
+import { X, Pencil, Package, Clock, Wrench, QrCode } from 'lucide-react';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 
 interface Props {
@@ -36,6 +36,19 @@ export function AssetDetailModal({ asset, onClose, onEdit }: Props) {
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => {
+                                // We need to trigger the parent's setQrAsset but this modal is isolated.
+                                // However, in assets/page.tsx, the QRCodeModal is rendered based on qrAsset state.
+                                // To make this work simply, let's just use the window.print() or similar if the QR code was here,
+                                // but the project uses a separate QRCodeModal.
+                                // Let's check if we can just trigger it.
+                                (window as any).showAssetQR?.(asset);
+                            }}
+                            className="btn-secondary btn-sm gap-1.5"
+                        >
+                            <QrCode className="w-3.5 h-3.5" />In QR
+                        </button>
                         <button onClick={onEdit} className="btn-secondary btn-sm gap-1.5"><Pencil className="w-3.5 h-3.5" />Chỉnh sửa</button>
                         <button onClick={onClose} className="btn-icon btn-ghost"><X className="w-4 h-4" /></button>
                     </div>
@@ -47,8 +60,10 @@ export function AssetDetailModal({ asset, onClose, onEdit }: Props) {
                         {[
                             { label: 'Vị trí', value: asset.location },
                             { label: 'Năm mua', value: String(asset.year) },
-                            { label: 'Mã tài sản', value: asset.id },
+                            { label: 'Số lượng', value: String(asset.quantity || 1) },
                             { label: 'Trạng thái', value: undefined, badge: asset.status },
+                            { label: 'Nguyên giá (ĐV)', value: asset.originalPrice ? new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(asset.originalPrice) : '—' },
+                            { label: 'Tổng nguyên giá', value: asset.originalPrice ? new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(asset.originalPrice * (asset.quantity || 1)) : '—' },
                         ].map(({ label, value, badge }) => (
                             <div key={label} className="bg-slate-50 rounded-xl p-3">
                                 <p className="text-xs text-slate-500 mb-1">{label}</p>

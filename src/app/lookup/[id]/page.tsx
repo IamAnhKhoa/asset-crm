@@ -1,6 +1,6 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { CheckCircle, Wrench, Clock, MapPin, Calendar, AlertTriangle, Loader2, ChevronDown, ChevronUp, Send, Package, Search, UserCircle, Truck } from 'lucide-react';
+import { useEffect, useState, useCallback, memo } from 'react';
+import { CheckCircle, Wrench, Clock, AlertTriangle, Loader2, ChevronDown, Send, Package, Search, UserCircle, Truck, MapPin } from 'lucide-react';
 import Link from 'next/link';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -25,14 +25,14 @@ interface LookupData {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-    'Đang sử dụng': 'bg-emerald-50 text-emerald-700 border-emerald-100',
+    'Đang sử dụng': 'bg-indigo-50 text-indigo-700 border-indigo-100',
     'Cần sửa': 'bg-amber-50 text-amber-700 border-amber-100',
     'Đang sửa chữa': 'bg-blue-50 text-blue-700 border-blue-100',
     'Hỏng': 'bg-rose-50 text-rose-700 border-rose-100',
-    'Tốt': 'bg-emerald-50 text-emerald-700 border-emerald-100',
+    'Tốt': 'bg-indigo-50 text-indigo-700 border-indigo-100',
     'Từ chối': 'bg-slate-100 text-slate-600 border-slate-200',
     'Chờ duyệt': 'bg-indigo-50 text-indigo-700 border-indigo-100',
-    'Đã duyệt': 'bg-emerald-50 text-emerald-700 border-emerald-100',
+    'Đã duyệt': 'bg-indigo-50 text-indigo-700 border-indigo-100',
     'Đã giao đơn vị ngoài xử lý': 'bg-purple-50 text-purple-700 border-purple-200',
 };
 
@@ -126,33 +126,35 @@ export default function LookupPage({ params }: { params: { id: string } }) {
     }
 
     if (loading) return (
-        <div className="min-h-screen bg-[#F8FAFC] p-4 sm:p-6 pb-20 space-y-6">
-            <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 rounded-xl bg-slate-200 animate-pulse shrink-0"></div>
-                <div className="space-y-2 flex-1">
-                    <div className="h-4 bg-slate-200 rounded animate-pulse w-1/3"></div>
-                    <div className="h-3 bg-slate-200 rounded animate-pulse w-1/4"></div>
+        /* min-h-screen + reserved card height prevents CLS when content loads */
+        <div className="min-h-screen bg-[#F8FAFC] p-4 pb-20 space-y-4">
+            {/* Sticky header placeholder — same height as real header */}
+            <div className="sticky top-0 z-30 bg-white shadow-sm border-b border-slate-200/60 -mx-4 px-4 py-3 mb-4">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-slate-200 shrink-0" style={{ contain: 'strict' }}></div>
+                    <div className="space-y-2 flex-1">
+                        <div className="h-4 bg-slate-200 rounded w-1/3"></div>
+                        <div className="h-3 bg-slate-200 rounded w-1/4 mt-1"></div>
+                    </div>
                 </div>
             </div>
-
-            <div className="bg-white rounded-[2rem] border border-slate-200/60 p-6 space-y-6">
+            {/* Main card — fixed height so page doesn't jump */}
+            <div className="bg-white rounded-[2rem] border border-slate-200/60 p-6 space-y-6" style={{ minHeight: 380 }}>
                 <div className="flex justify-between items-center">
-                    <div className="h-4 bg-slate-200 rounded animate-pulse w-1/4"></div>
-                    <div className="h-6 bg-slate-200 rounded-lg animate-pulse w-1/5"></div>
+                    <div className="h-4 bg-slate-200 rounded w-1/4"></div>
+                    <div className="h-6 bg-slate-200 rounded-lg w-1/5"></div>
                 </div>
                 <div className="space-y-3">
-                    <div className="h-3 bg-slate-200 rounded animate-pulse w-16"></div>
-                    <div className="h-8 bg-slate-200 rounded animate-pulse w-3/4"></div>
+                    <div className="h-3 bg-slate-200 rounded w-16"></div>
+                    <div className="h-8 bg-slate-200 rounded w-3/4"></div>
                 </div>
                 <div className="grid grid-cols-2 gap-6 pt-4 border-t border-slate-100">
-                    <div className="space-y-2">
-                        <div className="h-3 bg-slate-200 rounded animate-pulse w-1/2"></div>
-                        <div className="h-4 bg-slate-200 rounded animate-pulse w-3/4"></div>
-                    </div>
-                    <div className="space-y-2">
-                        <div className="h-3 bg-slate-200 rounded animate-pulse w-1/2"></div>
-                        <div className="h-4 bg-slate-200 rounded animate-pulse w-3/4"></div>
-                    </div>
+                    {[0, 1, 2, 3].map(i => (
+                        <div key={i} className="space-y-2">
+                            <div className="h-3 bg-slate-200 rounded w-1/2"></div>
+                            <div className="h-4 bg-slate-200 rounded w-3/4"></div>
+                        </div>
+                    ))}
                 </div>
             </div>
         </div>
@@ -195,8 +197,8 @@ export default function LookupPage({ params }: { params: { id: string } }) {
         }
     }
 
-    let dotColor = 'bg-emerald-500';
-    let textColor = 'text-emerald-600';
+    let dotColor = 'bg-blue-500';
+    let textColor = 'text-indigo-600';
     let statusText = 'Trạng thái ổn định';
 
     if (hasPendingRepair) {
@@ -229,36 +231,12 @@ export default function LookupPage({ params }: { params: { id: string } }) {
         statusText = 'Đang xử lý ngoài';
     }
 
-    const DetailModal = ({ title, show, onClose, children }: { title: string, show: boolean, onClose: () => void, children: React.ReactNode }) => {
-        if (!show) return null;
-        return (
-            <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4">
-                <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
-                <div className="relative w-full max-w-lg bg-white rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 max-h-[90vh] flex flex-col">
-                    <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between shrink-0">
-                        <div className="flex items-center gap-2">
-                            <div className="w-1.5 h-4 bg-indigo-500 rounded-full"></div>
-                            <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">{title}</h3>
-                        </div>
-                        <button onClick={onClose} className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors">
-                            <ChevronDown className="w-5 h-5 rotate-180" />
-                        </button>
-                    </div>
-                    <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
-                        {children}
-                    </div>
-                    <div className="p-4 bg-slate-50 border-t border-slate-100 shrink-0">
-                        <button onClick={onClose} className="w-full h-12 bg-white border border-slate-200 text-slate-600 font-bold text-sm rounded-2xl shadow-sm">Đóng</button>
-                    </div>
-                </div>
-            </div>
-        );
-    };
+    // DetailModal is defined outside (below) to prevent re-creation on each render
 
     return (
         <div className="min-h-screen bg-[#F8FAFC]">
-            {/* Mobile Header (Sleek) */}
-            <div className="sticky top-0 z-30 bg-white shadow-sm border-b border-slate-200/60 px-4 py-3 sm:py-4">
+            {/* Sticky header with hardware-accelerated transform for smooth scroll */}
+            <div className="sticky top-0 z-30 bg-white shadow-sm border-b border-slate-200/60 px-4 py-3 sm:py-4" style={{ transform: 'translateZ(0)', contain: 'layout' }}>
                 <div className="max-w-xl mx-auto flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-200 shrink-0">
                         <Search className="w-5 h-5 text-white" />
@@ -302,13 +280,21 @@ export default function LookupPage({ params }: { params: { id: string } }) {
 
             <div className="max-w-lg mx-auto px-4 py-6 space-y-6">
                 {/* Visual Identity Card */}
-                <div className="relative">
-                    <div className="absolute inset-0 bg-indigo-600 rounded-[2.5rem] blur-2xl opacity-[0.08] -z-10"></div>
-                    <div className="bg-white rounded-[2rem] border border-slate-200/60 shadow-xl shadow-slate-200/40 overflow-hidden">
+                <div className="relative mt-8 mb-4">
+                    {/* Outer gentle highlight glow */}
+                    <div className="absolute -inset-[4px] rounded-[2.2rem] bg-gradient-to-br from-blue-200 via-indigo-200 to-blue-300 opacity-40 blur-[8px] animate-[pulse_4s_ease-in-out_infinite]" style={{ zIndex: 0 }} />
+                    {/* Inner subtle ring */}
+                    <div className="absolute -inset-[1.5px] rounded-[2.1rem] bg-gradient-to-br from-blue-300 to-indigo-300 opacity-50" style={{ zIndex: 1 }} />
+
+                    <div className="absolute inset-0 bg-blue-600 rounded-[2.5rem] blur-2xl opacity-[0.05] -z-10"></div>
+                    <div className="relative z-10 bg-white rounded-[2rem] border border-white shadow-xl shadow-blue-900/5 overflow-hidden">
                         {/* Status bar */}
                         <div className="flex items-center justify-between px-6 pt-5 pb-2">
                             <div className="flex items-center gap-2">
-                                <div className={`w-2 h-2 rounded-full animate-pulse ${dotColor}`}></div>
+                                <span className="relative flex h-2 w-2">
+                                    <span className={`animate-[ping_3s_ease-in-out_infinite] absolute inline-flex h-full w-full rounded-full opacity-75 ${dotColor}`}></span>
+                                    <span className={`relative inline-flex rounded-full h-2 w-2 ${dotColor}`}></span>
+                                </span>
                                 <span className={`text-[10px] font-black uppercase tracking-widest ${textColor}`}>
                                     {statusText}
                                 </span>
@@ -318,102 +304,121 @@ export default function LookupPage({ params }: { params: { id: string } }) {
 
                         <div className="px-6 py-4 flex items-start gap-4">
                             <div className="flex-1 min-w-0">
-                                <p className="text-[11px] font-mono text-slate-400 tracking-tighter mb-1">ID: {asset.id}</p>
-                                <h1 className="text-2xl font-black text-slate-900 leading-tight tracking-tight break-words pr-2">
+                                <p className="text-[11px] font-mono text-indigo-400/80 tracking-tighter mb-1">ID: {asset.id}</p>
+                                <h1 className="text-2xl font-black text-indigo-950 leading-tight tracking-tight break-words pr-2">
                                     {asset.name}
                                 </h1>
                             </div>
-                            <div className="shrink-0 bg-slate-50 p-2 rounded-2xl border border-slate-100">
+                            {/* Fixed 64×64 wrapper prevents CLS from QR code rendering */}
+                            <div className="shrink-0 bg-slate-50 p-2 rounded-2xl border border-slate-100" style={{ width: 68, height: 68 }}>
                                 <QRCodeSVG
                                     value={`https://qlts-tah.vercel.app/lookup/${encodeURIComponent(asset.id)}`}
                                     size={60}
-                                    level="H"
+                                    level="M"
                                     includeMargin={false}
                                 />
                             </div>
                         </div>
 
                         {/* Visual Divider */}
-                        <div className="mx-6 h-px bg-slate-100"></div>
+                        <div className="mx-6 h-px bg-blue-50/80"></div>
 
                         {/* Detailed Specs */}
                         <div className="px-6 py-6 grid grid-cols-2 gap-y-6 gap-x-4">
                             <div className="space-y-1">
-                                <div className="flex items-center gap-1.5 text-slate-400">
+                                <div className="flex items-center gap-1.5 text-blue-400/80">
                                     <UserCircle className="w-3.5 h-3.5" />
                                     <span className="text-[10px] uppercase font-bold tracking-wider">Người quản lý</span>
                                 </div>
-                                <p className="text-sm font-semibold text-slate-800">{asset.person || 'Chưa bàn giao'}</p>
+                                <p className="text-sm font-semibold text-indigo-900">{asset.person || 'Chưa bàn giao'}</p>
                             </div>
                             <div className="space-y-1">
-                                <div className="flex items-center gap-1.5 text-slate-400">
+                                <div className="flex items-center gap-1.5 text-blue-400/80">
                                     <Clock className="w-3.5 h-3.5" />
                                     <span className="text-[10px] uppercase font-bold tracking-wider">Năm sử dụng</span>
                                 </div>
-                                <p className="text-sm font-semibold text-slate-800">{asset.year || '—'}</p>
+                                <p className="text-sm font-semibold text-indigo-900">{asset.year || '—'}</p>
                             </div>
                             <div className="space-y-1">
-                                <div className="flex items-center gap-1.5 text-slate-400">
+                                <div className="flex items-center gap-1.5 text-blue-400/80">
                                     <Package className="w-3.5 h-3.5" />
                                     <span className="text-[10px] uppercase font-bold tracking-wider">Số lượng</span>
                                 </div>
-                                <p className="text-sm font-bold text-slate-800">{asset.quantity || 1}</p>
+                                <p className="text-sm font-bold text-indigo-900">{asset.quantity || 1}</p>
                             </div>
                             <div className="space-y-1">
-                                <div className="flex items-center gap-1.5 text-slate-400">
+                                <div className="flex items-center gap-1.5 text-blue-400/80">
                                     <Send className="w-3.5 h-3.5 scale-75" />
                                     <span className="text-[10px] uppercase font-bold tracking-wider">Đơn giá</span>
                                 </div>
-                                <p className="text-sm font-semibold text-slate-800">{formatCurrency(asset.originalPrice)}</p>
+                                <p className="text-sm font-semibold text-indigo-900">{formatCurrency(asset.originalPrice)}</p>
                             </div>
                             <div className="space-y-1">
                                 <div className="flex items-center gap-1.5 text-indigo-400">
                                     <Package className="w-3.5 h-3.5" />
                                     <span className="text-[10px] uppercase font-bold tracking-wider">Tổng nguyên giá</span>
                                 </div>
-                                <p className="text-sm font-bold text-indigo-900">
+                                <p className="text-sm font-bold text-indigo-700">
                                     {formatCurrency((asset.originalPrice || 0) * (asset.quantity || 1))}
                                 </p>
                             </div>
                             <div className="space-y-1">
-                                <div className="flex items-center gap-1.5 text-emerald-400">
+                                <div className="flex items-center gap-1.5 text-blue-500">
                                     <CheckCircle className="w-3.5 h-3.5" />
                                     <span className="text-[10px] uppercase font-bold tracking-wider">Tổng GT còn lại</span>
                                 </div>
-                                <p className="text-sm font-black text-emerald-700">
+                                <p className="text-sm font-black text-blue-700">
                                     {(() => {
                                         const unitRem = calculateRemainingValue(asset.originalPrice, asset.year);
                                         return unitRem ? formatCurrency(unitRem * (asset.quantity || 1)) : '—';
                                     })()}
                                 </p>
                             </div>
-                            <div className="space-y-1 col-span-2">
-                                <div className="flex items-center gap-1.5 text-slate-400">
-                                    <MapPin className="w-3.5 h-3.5" />
-                                    <span className="text-[10px] uppercase font-bold tracking-wider">Vị trí lưu giữ</span>
-                                </div>
-                                <div className="space-y-0.5">
-                                    <p className="text-sm font-semibold text-slate-800">{asset.location}</p>
-                                    <p className="text-xs text-slate-500 italic">{asset.specificLocation || 'Chưa có vị trí chi tiết'}</p>
+                            <div className="col-span-2 mt-2 -mx-2 relative">
+                                {/* Outer glow */}
+                                <div className="absolute -inset-[3px] rounded-2xl bg-gradient-to-r from-blue-300 via-indigo-300 to-blue-300 opacity-50 blur-[5px] animate-[pulse_3s_ease-in-out_infinite]" style={{ zIndex: 0 }} />
+
+                                <div className="relative z-10 rounded-2xl p-4 flex items-center gap-3.5"
+                                    style={{ background: 'linear-gradient(135deg, #f5f7ff 0%, #ecf0ff 100%)', border: '1px solid #dce4ff' }}>
+                                    <div className="relative shrink-0">
+                                        <div className="absolute inset-0 bg-indigo-400 rounded-xl animate-[ping_3s_ease-in-out_infinite] opacity-20"></div>
+                                        <div className="relative w-11 h-11 rounded-xl flex items-center justify-center shadow-md border border-indigo-100"
+                                            style={{ background: 'linear-gradient(135deg, #6366f1, #4f46e5)' }}>
+                                            <MapPin className="w-5 h-5 text-white" />
+                                        </div>
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <p className="text-[10px] uppercase font-black tracking-widest text-indigo-500">Vị trí lưu giữ</p>
+                                            <span className="relative flex h-1.5 w-1.5">
+                                                <span className="animate-[ping_2s_ease-in-out_infinite] absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-indigo-500"></span>
+                                            </span>
+                                        </div>
+                                        <p className="text-[17px] font-black text-indigo-950 leading-tight">{asset.location}</p>
+                                        {asset.specificLocation && (
+                                            <p className="text-[11px] text-indigo-600 font-bold mt-1">{asset.specificLocation}</p>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </div>
 
                         {/* Compact History Summary Line */}
-                        <div className="bg-slate-50 border-t border-slate-100 px-6 py-4 flex items-center justify-between gap-4">
+                        <div className="bg-blue-50/30 border-t border-blue-50 px-6 py-4 flex items-center justify-between gap-4">
                             <button
                                 onClick={() => lastApprovedCheck && setSelectedCheck(lastApprovedCheck)}
                                 className="flex-1 flex flex-col text-left active:scale-95 transition-transform"
                             >
-                                <span className="text-[9px] font-bold text-slate-400 uppercase">Lần cuối kiểm kê</span>
-                                <span className="text-[11px] font-semibold text-slate-700">{lastApprovedCheck?.time || 'Chưa kiểm kê'}</span>
+                                <span className="text-[9px] font-bold text-blue-400/80 uppercase">Lần cuối kiểm kê</span>
+                                <span className="text-[11px] font-semibold text-indigo-800">{lastApprovedCheck?.time || 'Chưa kiểm kê'}</span>
                             </button>
-                            <div className="w-px h-6 bg-slate-200"></div>
+                            <div className="w-px h-6 bg-blue-100"></div>
                             <button
                                 onClick={() => lastApprovedRepair && setSelectedRepair(lastApprovedRepair)}
                                 className="flex-1 flex flex-col text-right active:scale-95 transition-transform"
                             >
-                                <span className="text-[9px] font-bold text-slate-400 uppercase">Sửa chữa gần nhất</span>
+                                <span className="text-[9px] font-bold text-blue-400/80 uppercase">Sửa chữa gần nhất</span>
                                 <span className="text-[11px] font-semibold text-indigo-600">{lastApprovedRepair?.time || 'Chưa có'}</span>
                             </button>
                         </div>
@@ -449,120 +454,151 @@ export default function LookupPage({ params }: { params: { id: string } }) {
                 )}
 
                 {/* Reporting Section - Collapsible Form */}
-                <div className="bg-white rounded-[2rem] border border-slate-200/60 shadow-lg shadow-slate-200/20 overflow-hidden">
-                    <button
-                        onClick={() => {
-                            setShowForm(!showForm);
-                            if (!showForm) setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }), 100);
-                        }}
-                        className="w-full px-6 py-5 flex items-center justify-between group"
-                    >
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                <Send className="w-5 h-5" />
-                            </div>
-                            <div className="text-left">
-                                <h3 className="text-sm font-bold text-slate-800">Báo cáo & Phản hồi</h3>
-                                <p className="text-xs text-slate-400">Kiểm kê hoặc báo hỏng tài sản này</p>
-                            </div>
-                        </div>
-                        <div className={`w-8 h-8 rounded-full border border-slate-100 flex items-center justify-center transition-all duration-300 ${showForm ? 'rotate-180 bg-slate-50' : ''}`}>
-                            <ChevronDown className={`w-4 h-4 transition-colors ${showForm ? 'text-indigo-600' : 'text-slate-400'}`} />
-                        </div>
-                    </button>
+                {/* ── Highlight frame: glowing border + pulsing ring ── */}
+                <div className="relative">
+                    {/* Outer glow */}
+                    <div className="absolute -inset-[3px] rounded-[2.2rem] bg-gradient-to-br from-rose-300 via-orange-300 to-rose-400 opacity-40 blur-[8px] animate-[pulse_4s_ease-in-out_infinite]" style={{ zIndex: 0 }} />
+                    {/* Inner solid ring */}
+                    <div className="absolute -inset-[1.5px] rounded-[2.1rem] bg-gradient-to-br from-rose-400 to-orange-300" style={{ zIndex: 1 }} />
 
-                    {showForm && (
-                        <div className="px-6 pb-6 pt-2 border-t border-slate-50 animate-in fade-in zoom-in-95 duration-200">
-                            <div className="flex p-1 bg-slate-100 rounded-2xl mb-6">
-                                <button
-                                    onClick={() => setReportTab('check')}
-                                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold rounded-xl transition-all ${reportTab === 'check' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500'}`}
-                                >
-                                    <CheckCircle className="w-3.5 h-3.5" /> Kiểm kê
-                                </button>
-                                <button
-                                    onClick={() => setReportTab('repair')}
-                                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold rounded-xl transition-all ${reportTab === 'repair' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500'}`}
-                                >
-                                    <Wrench className="w-3.5 h-3.5" /> Báo sửa chữa
-                                </button>
-                            </div>
+                    {/* CTA Banner */}
+                    <div className="relative z-10 bg-gradient-to-r from-rose-500 to-orange-400 rounded-t-[2rem] px-5 py-3.5 flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                            <Wrench className="w-4 h-4 text-white" />
+                        </div>
+                        <div className="flex-1">
+                            <p className="text-white text-[11px] font-black uppercase tracking-widest leading-none">Có sự cố? Báo ngay!</p>
+                            <p className="text-white/80 text-[10px] font-medium mt-0.5">Gửi phiếu yêu cầu sửa chữa nhanh tại đây</p>
+                        </div>
+                        <div className="relative flex h-2 w-2">
+                            <span className="animate-[ping_2s_ease-in-out_infinite] absolute inline-flex h-full w-full rounded-full bg-white opacity-50"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                        </div>
+                    </div>
 
-                            <form onSubmit={handleSubmit} className="space-y-5">
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Tên người báo cáo *</label>
-                                    <input
-                                        className="w-full h-12 bg-slate-50 border-slate-100 rounded-2xl px-4 text-sm font-medium focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all"
-                                        placeholder="Tên của bạn..."
-                                        value={person}
-                                        onChange={e => setPerson(e.target.value)}
-                                        required
-                                    />
+                    <div className="relative z-10 bg-white rounded-b-[2rem] overflow-hidden" style={{ contain: 'layout' }}>
+                        <button
+                            onClick={() => {
+                                setShowForm(f => {
+                                    const next = !f;
+                                    if (next) {
+                                        // Deferred scroll to avoid INP blocking
+                                        requestAnimationFrame(() =>
+                                            setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }), 80)
+                                        );
+                                    }
+                                    return next;
+                                });
+                            }}
+                            className="w-full px-6 py-5 flex items-center justify-between group active:scale-[0.98] transition-transform"
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                    <Send className="w-5 h-5" />
+                                </div>
+                                <div className="text-left">
+                                    <h3 className="text-sm font-bold text-slate-800">Báo cáo & Phản hồi</h3>
+                                    <p className="text-xs text-slate-400">Kiểm kê hoặc báo hỏng tài sản này</p>
+                                </div>
+                            </div>
+                            <div className={`w-8 h-8 rounded-full border border-slate-100 flex items-center justify-center transition-all duration-300 ${showForm ? 'rotate-180 bg-slate-50' : ''}`}>
+                                <ChevronDown className={`w-4 h-4 transition-colors ${showForm ? 'text-indigo-600' : 'text-slate-400'}`} />
+                            </div>
+                        </button>
+
+                        {showForm && (
+                            <div className="px-6 pb-6 pt-2 border-t border-slate-50 animate-in fade-in zoom-in-95 duration-200">
+                                <div className="flex p-1 bg-slate-100 rounded-2xl mb-6">
+                                    <button
+                                        onClick={() => setReportTab('check')}
+                                        className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold rounded-xl transition-all ${reportTab === 'check' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500'}`}
+                                    >
+                                        <CheckCircle className="w-3.5 h-3.5" /> Kiểm kê
+                                    </button>
+                                    <button
+                                        onClick={() => setReportTab('repair')}
+                                        className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-semibold rounded-xl transition-all ${reportTab === 'repair' ? 'bg-rose-50 text-rose-600 shadow-sm ring-1 ring-rose-200' : 'text-slate-500'}`}
+                                    >
+                                        <Wrench className="w-3.5 h-3.5" /> Báo sửa chữa
+                                    </button>
                                 </div>
 
-                                {reportTab === 'repair' && (
+                                <form onSubmit={handleSubmit} className="space-y-5">
                                     <div className="space-y-2">
-                                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Nội dung lỗi / Sự cố *</label>
-                                        <textarea
-                                            className="w-full min-h-[100px] bg-slate-50 border-slate-100 rounded-2xl p-4 text-sm font-medium focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all resize-none"
-                                            placeholder="Mô tả chi tiết tình trạng máy..."
-                                            value={issue}
-                                            onChange={e => setIssue(e.target.value)}
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Tên người báo cáo *</label>
+                                        <input
+                                            className="w-full h-12 bg-slate-50 border-slate-100 rounded-2xl px-4 text-sm font-medium focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all"
+                                            placeholder="Tên của bạn..."
+                                            value={person}
+                                            onChange={e => setPerson(e.target.value)}
                                             required
                                         />
-                                        <div className="flex flex-wrap gap-2 mt-2 pt-1 border-t border-slate-100">
-                                            {(() => {
-                                                const assetName = (asset.name || '').toLowerCase();
-                                                const isPrinter = assetName.includes('máy in');
-                                                const isComputer = assetName.includes('máy tính') || assetName.includes('pc') || assetName.includes('laptop');
+                                    </div>
 
-                                                const suggestions = isPrinter
-                                                    ? ['Không in được', 'Kẹt giấy', 'Bản in mờ/đốm đen', 'Hết mực', 'Không kết nối máy tính', 'Kêu to khi in']
-                                                    : isComputer
-                                                        ? ['Không lên nguồn', 'Màn hình xanh/đen', 'Đơ/Lag', 'Không vào được mạng', 'Lỗi phần mềm', 'Phím/Chuột hỏng']
-                                                        : ['Không hoạt động', 'Hư hỏng vật lý', 'Rơi vỡ / Vo nước', 'Mất linh kiện'];
+                                    {reportTab === 'repair' && (
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Nội dung lỗi / Sự cố *</label>
+                                            <textarea
+                                                className="w-full min-h-[100px] bg-slate-50 border-slate-100 rounded-2xl p-4 text-sm font-medium focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all resize-none"
+                                                placeholder="Mô tả chi tiết tình trạng máy..."
+                                                value={issue}
+                                                onChange={e => setIssue(e.target.value)}
+                                                required
+                                            />
+                                            <div className="flex flex-wrap gap-2 mt-2 pt-1 border-t border-slate-100">
+                                                {(() => {
+                                                    const assetName = (asset.name || '').toLowerCase();
+                                                    const isPrinter = assetName.includes('máy in');
+                                                    const isComputer = assetName.includes('máy tính') || assetName.includes('pc') || assetName.includes('laptop');
 
-                                                return suggestions.map(s => (
-                                                    <button key={s} type="button" onClick={() => setIssue(prev => prev ? `${prev}, ${s}` : s)}
-                                                        className="px-3 py-2 text-[11px] font-bold bg-white text-slate-600 rounded-xl shadow-sm hover:bg-indigo-50 hover:text-indigo-600 transition-colors border border-slate-200/60 active:scale-95"
-                                                    >+ {s}</button>
-                                                ));
-                                            })()}
+                                                    const suggestions = isPrinter
+                                                        ? ['Không in được', 'Kẹt giấy', 'Bản in mờ/đốm đen', 'Hết mực', 'Không kết nối máy tính', 'Kêu to khi in']
+                                                        : isComputer
+                                                            ? ['Không lên nguồn', 'Màn hình xanh/đen', 'Đơ/Lag', 'Không vào được mạng', 'Lỗi phần mềm', 'Phím/Chuột hỏng']
+                                                            : ['Không hoạt động', 'Hư hỏng vật lý', 'Rơi vỡ / Vo nước', 'Mất linh kiện'];
+
+                                                    return suggestions.map(s => (
+                                                        <button key={s} type="button" onClick={() => setIssue(prev => prev ? `${prev}, ${s}` : s)}
+                                                            className="px-3 py-2 text-[11px] font-bold bg-white text-slate-600 rounded-xl shadow-sm hover:bg-indigo-50 hover:text-indigo-600 transition-colors border border-slate-200/60 active:scale-95"
+                                                        >+ {s}</button>
+                                                    ));
+                                                })()}
+                                            </div>
                                         </div>
-                                    </div>
-                                )}
-
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Ghi chú thêm</label>
-                                    <textarea
-                                        className="w-full min-h-[60px] bg-slate-50 border-slate-100 rounded-2xl p-4 text-sm font-medium focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all resize-none"
-                                        placeholder="Thông tin bổ sung..."
-                                        value={note}
-                                        onChange={e => setNote(e.target.value)}
-                                    />
-                                </div>
-
-                                {formError && (
-                                    <div className="p-3 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2 text-rose-600">
-                                        <AlertTriangle className="w-4 h-4" />
-                                        <p className="text-xs font-bold">{formError}</p>
-                                    </div>
-                                )}
-
-                                <button
-                                    type="submit"
-                                    disabled={submitting}
-                                    className={`w-full h-14 rounded-2xl font-black text-sm shadow-lg shadow-indigo-100 transition-all active:scale-95 disabled:opacity-50
-                                        ${reportTab === 'check' ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
-                                >
-                                    {submitting ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : (
-                                        reportTab === 'check' ? 'XÁC NHẬN KIỂM KÊ' : 'GỬI YÊU CẦU SỬA CHỮA'
                                     )}
-                                </button>
-                            </form>
-                        </div>
-                    )}
-                </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Ghi chú thêm</label>
+                                        <textarea
+                                            className="w-full min-h-[60px] bg-slate-50 border-slate-100 rounded-2xl p-4 text-sm font-medium focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all resize-none"
+                                            placeholder="Thông tin bổ sung..."
+                                            value={note}
+                                            onChange={e => setNote(e.target.value)}
+                                        />
+                                    </div>
+
+                                    {formError && (
+                                        <div className="p-3 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2 text-rose-600">
+                                            <AlertTriangle className="w-4 h-4" />
+                                            <p className="text-xs font-bold">{formError}</p>
+                                        </div>
+                                    )}
+
+                                    <button
+                                        type="submit"
+                                        disabled={submitting}
+                                        className={`w-full h-14 rounded-2xl font-black text-sm shadow-lg shadow-indigo-100 transition-all active:scale-95 disabled:opacity-50
+                                        ${reportTab === 'check' ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+                                    >
+                                        {submitting ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : (
+                                            reportTab === 'check' ? 'XÁC NHẬN KIỂM KÊ' : 'GỬI YÊU CẦU SỬA CHỮA'
+                                        )}
+                                    </button>
+                                </form>
+                            </div>
+                        )}
+                    </div>
+                </div> {/* end highlight frame */}
 
                 {/* Repair Ticket Section - Premium UI */}
                 <div className="space-y-4 pt-2">
@@ -698,7 +734,7 @@ export default function LookupPage({ params }: { params: { id: string } }) {
                 </div>
             </div>
 
-            {/* Popups */}
+            {/* Popups — DetailModal is a stable component defined outside render fn */}
             <DetailModal
                 title="Chi tiết kiểm kê"
                 show={!!selectedCheck}
@@ -816,3 +852,57 @@ export default function LookupPage({ params }: { params: { id: string } }) {
         </div>
     );
 }
+
+/* ============================================================
+   DetailModal — defined OUTSIDE LookupPage to be a stable
+   reference. This prevents React from re-creating the component
+   on every LookupPage render, which was causing INP delays.
+   ============================================================ */
+const DetailModal = memo(function DetailModal(
+    { title, show, onClose, children }:
+        { title: string; show: boolean; onClose: () => void; children: React.ReactNode }
+) {
+    if (!show) return null;
+    return (
+        <div
+            className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4"
+            // Hardware-accelerated layer to avoid layout recalc on open
+            style={{ willChange: 'opacity' }}
+        >
+            {/* Solid overlay instead of backdrop-blur (no GPU compositing cost on mobile) */}
+            <div
+                className="absolute inset-0"
+                style={{ background: 'rgba(15,23,42,0.65)' }}
+                onClick={onClose}
+            />
+            <div
+                className="relative w-full max-w-lg bg-white rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
+                style={{ transform: 'translateZ(0)' }}
+            >
+                <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between shrink-0">
+                    <div className="flex items-center gap-2">
+                        <div className="w-1.5 h-4 bg-indigo-500 rounded-full"></div>
+                        <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">{title}</h3>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 active:bg-slate-100"
+                        style={{ touchAction: 'manipulation' }}
+                    >
+                        <ChevronDown className="w-5 h-5 rotate-180" />
+                    </button>
+                </div>
+                <div className="p-6 overflow-y-auto flex-1" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
+                    {children}
+                </div>
+                <div className="p-4 bg-slate-50 border-t border-slate-100 shrink-0">
+                    <button
+                        onClick={onClose}
+                        className="w-full h-12 bg-white border border-slate-200 text-slate-600 font-bold text-sm rounded-2xl shadow-sm active:scale-[0.98] transition-transform"
+                        style={{ touchAction: 'manipulation' }}
+                    >Đóng</button>
+                </div>
+            </div>
+        </div>
+    );
+});

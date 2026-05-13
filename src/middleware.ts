@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
+import { kv } from '@vercel/kv';
 
 export async function middleware(req: NextRequest) {
     const url = req.nextUrl;
@@ -30,6 +31,18 @@ export async function middleware(req: NextRequest) {
             return NextResponse.redirect(loginUrl);
         }
         return NextResponse.next();
+    }
+
+    // Fast KV status check for real-time ban
+    if (token.email) {
+        try {
+            const liveStatus = await kv.get(`status:${token.email}`);
+            if (liveStatus === 'rejected') {
+                token.status = 'rejected';
+            } else if (liveStatus === 'approved') {
+                token.status = 'approved';
+            }
+        } catch (e) { }
     }
 
     // 3. Đã đăng nhập

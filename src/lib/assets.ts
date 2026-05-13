@@ -1,51 +1,44 @@
 import { Asset } from '@/types';
-import {
-    getSheetValues,
-    appendSheetRow,
-    updateSheetCell,
-    deleteSheetRow,
-    SHEET_NAMES,
-} from './sheets';
-
-function rowToAsset(row: string[], rowIndex: number): Asset {
-    return {
-        id: row[0] || '',
-        name: row[1] || '',
-        location: row[2] || '',
-        year: row[3] || '',
-        status: row[4] || '',
-        person: row[5] || '',
-        specificLocation: row[6] || '',
-        originalPrice: row[7] ? (String(row[7]).replace(/[^0-9]/g, '') ? Number(String(row[7]).replace(/[^0-9]/g, '')) : undefined) : undefined,
-        row: rowIndex,
-    };
-}
+import { supabase } from './supabase';
+import { formatDateTime } from './date-utils';
 
 import { canViewAsset } from './auth';
 import { UserContext } from '@/types';
 
 export async function getAllAssets(userCtx?: UserContext): Promise<Asset[]> {
-    const data = await getSheetValues(SHEET_NAMES.ASSETS);
+    const { data, error } = await supabase
+        .from('assets')
+        .select('*')
+        .order('id', { ascending: true });
+
+    if (error) {
+        console.error('[Assets] getAllAssets error:', error.message);
+        return [];
+    }
+
     const result: Asset[] = [];
-    for (let i = 1; i < data.length; i++) {
-        if (data[i][0]) {
-            const asset = rowToAsset(data[i], i + 1);
-            if (!userCtx || canViewAsset(userCtx, asset)) {
-                result.push(asset);
-            }
+    for (const row of (data || [])) {
+        const asset = dbToAsset(row);
+        if (!userCtx || canViewAsset(userCtx, asset)) {
+            result.push(asset);
         }
     }
     return result;
 }
 
 export async function getAssetById(assetId: string): Promise<Asset | null> {
-    const data = await getSheetValues(SHEET_NAMES.ASSETS);
-    for (let i = 1; i < data.length; i++) {
-        if (String(data[i][0]).trim() === String(assetId).trim()) {
-            return rowToAsset(data[i], i + 1);
-        }
+    const { data, error } = await supabase
+        .from('assets')
+        .select('*')
+        .eq('id', assetId.trim())
+        .maybeSingle();
+
+    if (error) {
+        console.error('[Assets] getAssetById error:', error.message);
+        return null;
     }
-    return null;
+    if (!data) return null;
+    return dbToAsset(data);
 }
 
 export async function searchAssets(keyword: string, userCtx?: UserContext): Promise<Asset[]> {
@@ -66,7 +59,6 @@ export async function createAsset(
     const existing = await getAssetById(finalId);
 
     if (existing) {
-        // Find next suffix
         let counter = 1;
         while (true) {
             const nextId = `${finalId} (${counter})`;
@@ -76,64 +68,100 @@ export async function createAsset(
                 break;
             }
             counter++;
-            if (counter > 100) break; // safety
+            if (counter > 100) break;
         }
     }
 
-    await appendSheetRow(SHEET_NAMES.ASSETS, [
-        finalId,
-        data.name,
-        data.location,
-        data.year,
-        data.status || 'Đang sử dụng',
-        data.person || '',
-        data.specificLocation || '',
-        data.originalPrice ? String(data.originalPrice) : '',
-    ]);
-    return { success: true, message: existing ? `Đã thêm tài sản mới với mã ${finalId} (do trùng mã gốc)` : 'Đã thêm tài sản mới!', assetId: finalId };
+    const specObj = { specificLocation: data.specificLocation || '', oldLocation: data.oldLocation || '' };
+    const specStr = (specObj.specificLocation || specObj.oldLocation) ? JSON.stringify(specObj) : '';
+
+    const { error } = await supabase.from('assets').insert({
+        id: finalId,
+        name: data.name,
+        location: data.location,
+        year: String(data.year || ''),
+        quantity: data.quantity || 1,
+        status: data.status || 'Đang sử dụng',
+        person: data.person || '',
+        specific_location: specStr,
+        original_price: data.originalPrice || null,
+        created_at: data.createdAt || new Date().toISOString(),
+    });
+
+    if (error) {
+        console.error('[Assets] createAsset error:', error.message);
+        return { success: false, message: 'Lỗi: ' + error.message };
+    }
+
+    return {
+        success: true,
+        message: existing ? `Đã thêm tài sản mới với mã ${finalId} (do trùng mã gốc)` : 'Đã thêm tài sản mới!',
+        assetId: finalId,
+    };
 }
 
 export async function updateAsset(
     assetId: string,
     data: Partial<Omit<Asset, 'id' | 'row'>>
 ): Promise<{ success: boolean; message: string }> {
-    const sheetData = await getSheetValues(SHEET_NAMES.ASSETS);
-    for (let i = 1; i < sheetData.length; i++) {
-        if (String(sheetData[i][0]).trim() === String(assetId).trim()) {
-            const rowNum = i + 1;
-            if (data.name !== undefined) await updateSheetCell(SHEET_NAMES.ASSETS, rowNum, 2, data.name);
-            if (data.location !== undefined) await updateSheetCell(SHEET_NAMES.ASSETS, rowNum, 3, data.location);
-            if (data.year !== undefined) await updateSheetCell(SHEET_NAMES.ASSETS, rowNum, 4, String(data.year));
-            if (data.status !== undefined) await updateSheetCell(SHEET_NAMES.ASSETS, rowNum, 5, data.status);
-            if (data.person !== undefined) await updateSheetCell(SHEET_NAMES.ASSETS, rowNum, 6, data.person);
-            if (data.specificLocation !== undefined) await updateSheetCell(SHEET_NAMES.ASSETS, rowNum, 7, data.specificLocation);
-            if (data.originalPrice !== undefined) await updateSheetCell(SHEET_NAMES.ASSETS, rowNum, 8, data.originalPrice === null ? '' : String(data.originalPrice));
-            return { success: true, message: 'Đã cập nhật tài sản!' };
-        }
+    const updateData: Record<string, any> = {};
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.location !== undefined) updateData.location = data.location;
+    if (data.year !== undefined) updateData.year = String(data.year);
+    if (data.quantity !== undefined) updateData.quantity = data.quantity;
+    if (data.status !== undefined) updateData.status = data.status;
+    if (data.person !== undefined) updateData.person = data.person;
+    if (data.specificLocation !== undefined || data.oldLocation !== undefined) {
+        // Find existing to merge
+        const existing = await getAssetById(assetId);
+        const specObj = {
+            specificLocation: data.specificLocation !== undefined ? data.specificLocation : (existing?.specificLocation || ''),
+            oldLocation: data.oldLocation !== undefined ? data.oldLocation : (existing?.oldLocation || '')
+        };
+        updateData.specific_location = (specObj.specificLocation || specObj.oldLocation) ? JSON.stringify(specObj) : '';
     }
-    return { success: false, message: 'Không tìm thấy tài sản!' };
+
+    if (data.originalPrice !== undefined) updateData.original_price = data.originalPrice === null ? null : data.originalPrice;
+
+    if (Object.keys(updateData).length === 0) {
+        return { success: true, message: 'Không có thay đổi' };
+    }
+
+    const { error } = await supabase
+        .from('assets')
+        .update(updateData)
+        .eq('id', assetId.trim());
+
+    if (error) {
+        console.error('[Assets] updateAsset error:', error.message);
+        return { success: false, message: 'Lỗi: ' + error.message };
+    }
+    return { success: true, message: 'Đã cập nhật tài sản!' };
 }
 
 export async function deleteAsset(
     assetId: string
 ): Promise<{ success: boolean; message: string }> {
-    const sheetData = await getSheetValues(SHEET_NAMES.ASSETS);
-    for (let i = 1; i < sheetData.length; i++) {
-        if (String(sheetData[i][0]).trim() === String(assetId).trim()) {
-            await deleteSheetRow(SHEET_NAMES.ASSETS, i + 1);
-            return { success: true, message: 'Đã xóa tài sản!' };
-        }
+    const { error } = await supabase
+        .from('assets')
+        .delete()
+        .eq('id', assetId.trim());
+
+    if (error) {
+        console.error('[Assets] deleteAsset error:', error.message);
+        return { success: false, message: 'Lỗi: ' + error.message };
     }
-    return { success: false, message: 'Không tìm thấy tài sản!' };
+    return { success: true, message: 'Đã xóa tài sản!' };
 }
 
 export async function updateAssetStatus(assetId: string, status: string) {
-    const sheetData = await getSheetValues(SHEET_NAMES.ASSETS);
-    for (let i = 1; i < sheetData.length; i++) {
-        if (String(sheetData[i][0]).trim() === String(assetId).trim()) {
-            await updateSheetCell(SHEET_NAMES.ASSETS, i + 1, 5, status);
-            return;
-        }
+    const { error } = await supabase
+        .from('assets')
+        .update({ status })
+        .eq('id', assetId.trim());
+
+    if (error) {
+        console.error('[Assets] updateAssetStatus error:', error.message);
     }
 }
 
@@ -143,7 +171,52 @@ export async function getAssetLocation(assetId: string): Promise<string> {
 }
 
 export async function getDepartments(): Promise<string[]> {
-    const all = await getAllAssets();
-    const depts = [...new Set(all.map((a) => a.location).filter(Boolean))];
-    return depts.sort();
+    const { data, error } = await supabase
+        .from('assets')
+        .select('location')
+        .neq('location', '');
+
+    if (error) {
+        console.error('[Assets] getDepartments error:', error.message);
+        return [];
+    }
+
+    const unique = [...new Set((data || []).map((r: any) => r.location).filter(Boolean))];
+    return unique.sort();
+}
+
+// ── Helper: DB row → Asset interface ──
+function dbToAsset(row: any): Asset {
+    let specLocStr = row.specific_location || '';
+    let oldLocStr = '';
+
+    // Phân tích cú pháp nếu specific_location chứa JSON (cả nơi cũ và vị trí)
+    if (specLocStr.startsWith('{"')) {
+        try {
+            const parsed = JSON.parse(specLocStr);
+            specLocStr = parsed.specificLocation || '';
+            oldLocStr = parsed.oldLocation || '';
+        } catch (e) { }
+    } else {
+        // Fallback for old records: if it contains "Nơi cũ:", split it
+        if (specLocStr.includes('[Nơi cũ:')) {
+            const parts = specLocStr.split('[Nơi cũ:');
+            specLocStr = parts[0].trim();
+            oldLocStr = parts[1].replace(']', '').trim();
+        }
+    }
+
+    return {
+        id: row.id || '',
+        name: row.name || '',
+        location: row.location || '',
+        year: row.year || '',
+        quantity: row.quantity ?? 1,
+        status: row.status || '',
+        person: row.person || '',
+        specificLocation: specLocStr,
+        oldLocation: oldLocStr,
+        originalPrice: row.original_price ? Number(row.original_price) : undefined,
+        createdAt: row.created_at || '',
+    };
 }

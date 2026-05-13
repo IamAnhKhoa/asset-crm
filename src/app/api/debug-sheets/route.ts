@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server';
-import { getSheetValues, SHEET_NAMES } from '@/lib/sheets';
+import { supabase } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
     try {
-        const data = await getSheetValues(SHEET_NAMES.ASSETS);
-        return NextResponse.json({ rawData: data.slice(0, 5) });
+        const { data, error } = await supabase
+            .from('assets')
+            .select('*')
+            .limit(5);
+        if (error) throw error;
+        return NextResponse.json({ rawData: data });
     } catch (e: any) {
         return NextResponse.json({ error: e.message }, { status: 500 });
     }

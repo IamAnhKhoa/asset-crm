@@ -4,8 +4,6 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/authOptions';
 import { UserContext } from '@/types';
 
-import { getWithSWR, purgeCache, purgePattern } from '@/lib/kv-cache';
-
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
@@ -21,10 +19,7 @@ export async function GET(req: NextRequest) {
         const { searchParams } = new URL(req.url);
         const assetId = searchParams.get('assetId') || 'all';
 
-        const cacheKey = `history:repairs:${userCtx.role}:${userCtx.phongBan || 'all'}:${assetId}`;
-
-        const data = await getWithSWR(cacheKey, () => getRepairHistory(assetId === 'all' ? undefined : assetId, userCtx), 10, 2);
-
+        const data = await getRepairHistory(assetId === 'all' ? undefined : assetId, userCtx);
         return NextResponse.json(data);
     } catch (e: any) {
         console.error('[API History Repairs] Fatal error:', e);
@@ -40,15 +35,6 @@ export async function PATCH(req: NextRequest) {
         const body = await req.json();
         const { row, ...data } = body;
         const result = await updateRepairHistory(row, data);
-
-        // Invalidate cache
-        const assetId = data.assetId || (result as any).assetId;
-        await Promise.all([
-            purgePattern('history:repairs'),
-            purgeCache('dashboard'),
-            assetId ? purgeCache(`lookup:${assetId}`) : Promise.resolve()
-        ]).catch(e => console.warn('[API Repairs] Cache purge failed:', e));
-
         return NextResponse.json(result);
     } catch (e: any) {
         console.error('[API Repairs] Fatal error:', e);

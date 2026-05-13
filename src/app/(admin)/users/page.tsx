@@ -281,8 +281,18 @@ export default function UsersPage() {
                                                 )}
                                             </td>
                                             <td className="px-5 py-4 text-xs text-slate-500">
-                                                <div className="font-medium">{user.lastActive || 'N/A'}</div>
-                                                <div className="text-[10px] text-slate-400 mt-1">Tạo: {user.ngayTao}</div>
+                                                <div className="font-medium" title="Lần hoạt động cuối">{user.lastActive || 'N/A'}</div>
+                                                <div className="text-[10px] text-slate-400 mt-1" title="Ngày tham gia">Tạo: {user.ngayTao}</div>
+                                                {user.recentIps && user.recentIps.length > 0 && (
+                                                    <div className="mt-2 pt-1.5 border-t border-slate-100">
+                                                        <div className="text-[10px] font-semibold text-slate-600 mb-0.5">IP truy cập gần nhất:</div>
+                                                        <div className="flex flex-col gap-0.5">
+                                                            {user.recentIps.map((ip, i) => (
+                                                                <div key={i} className="font-mono text-[9px] text-slate-400 bg-slate-50 px-1 py-0.5 rounded">{ip}</div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </td>
                                         </tr>
                                     );

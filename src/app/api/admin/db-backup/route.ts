@@ -1,10 +1,21 @@
 import { NextResponse } from 'next/server';
-import { getSheetValues, SHEET_NAMES } from '@/lib/sheets';
+import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/authOptions';
 
 export const dynamic = 'force-dynamic';
+
+const TABLE_NAMES = [
+    'assets',
+    'check_history',
+    'pending_checks',
+    'repair_history',
+    'pending_repairs',
+    'notifications',
+    'service_prices',
+    'users',
+];
 
 export async function GET() {
     try {
@@ -15,18 +26,21 @@ export async function GET() {
 
         const wb = XLSX.utils.book_new();
 
-        // Backup all primary sheets
-        const sheetsToBackup = Object.values(SHEET_NAMES);
-
-        for (const sheetName of sheetsToBackup) {
+        for (const tableName of TABLE_NAMES) {
             try {
-                const values = await getSheetValues(sheetName);
-                if (values && values.length > 0) {
-                    const ws = XLSX.utils.aoa_to_sheet(values);
-                    XLSX.utils.book_append_sheet(wb, ws, sheetName.substring(0, 31)); // Excel limit 31 chars
+                const { data, error } = await supabase
+                    .from(tableName)
+                    .select('*')
+                    .order('id', { ascending: true });
+
+                if (error) throw error;
+
+                if (data && data.length > 0) {
+                    const ws = XLSX.utils.json_to_sheet(data);
+                    XLSX.utils.book_append_sheet(wb, ws, tableName.substring(0, 31));
                 }
             } catch (err) {
-                console.error(`Failed to backup sheet ${sheetName}:`, err);
+                console.error(`Failed to backup table ${tableName}:`, err);
             }
         }
 

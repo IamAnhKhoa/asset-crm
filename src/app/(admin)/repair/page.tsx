@@ -113,9 +113,19 @@ export default function RepairPage() {
     }
 
     async function deleteTicket(ticket: RepairTicket) {
-        if (!ticket.row || !confirm('Xóa phiếu này?')) return;
+        if (!ticket.row || !confirm('Bạn có chắc muốn xóa phiếu này?')) return;
         setBusy(`${ticket.row}`);
-        await fetch(`/api/pending/repairs/${ticket.row}`, { method: 'DELETE' });
+        try {
+            if (ticket.source === 'pending') {
+                await fetch(`/api/pending/repairs/${ticket.row}`, { method: 'DELETE' });
+            } else {
+                await fetch('/api/repairs', {
+                    method: 'DELETE',
+                    body: JSON.stringify({ row: ticket.row, source: ticket.source || 'history' }),
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }
+        } catch (e) { console.error(e); }
         await load();
         setBusy(null);
     }
@@ -246,10 +256,14 @@ export default function RepairPage() {
                                                                 </>
                                                             )}
                                                             {t.source === 'history' && (
-                                                                <button onClick={e => { e.stopPropagation(); setModal({ ticket: t, mode: 'update' }); }} className="btn btn-sm btn-secondary text-xs">
-                                                                    Cập nhật
-                                                                </button>
-                                                            )}
+                                                                <>
+                                                                    <button onClick={e => { e.stopPropagation(); setModal({ ticket: t, mode: 'update' }); }} className="btn btn-sm btn-secondary text-xs">
+                                                                        Cập nhật
+                                                                    </button>
+                                                                    <button onClick={e => { e.stopPropagation(); deleteTicket(t); }} disabled={isBusy} className="btn-icon btn-ghost text-rose-400" title="Xóa phiếu">
+                                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                </>)}
                                                             {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
                                                         </div>
                                                     </td>

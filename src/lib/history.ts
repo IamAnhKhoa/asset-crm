@@ -1,16 +1,10 @@
 import { CheckReport, RepairTicket, ApproveRepairData } from '@/types';
-import {
-    getSheetValues,
-    appendSheetRow,
-    updateSheetCell,
-    updateSheetRow,
-    deleteSheetRow,
-    SHEET_NAMES,
-    formatDateTime,
-} from './sheets';
+import { supabase } from './supabase';
+import { formatDateTime } from './date-utils';
 import { updateAssetStatus, getAllAssets } from './assets';
-import { sendTelegramMessage } from './telegram';
+import { sendTelegramMessage, updateTelegramMessage, TELEGRAM_CHAT_ID } from './telegram';
 import { UserContext } from '@/types';
+import { kv } from '@vercel/kv';
 
 // =========================
 //  HISTORY – KIỂM KÊ
@@ -26,20 +20,32 @@ export async function getCheckHistory(assetId?: string, userCtx?: UserContext): 
         }
     }
 
-    const data = await getSheetValues(SHEET_NAMES.HISTORY_CHECK);
+    let query = supabase
+        .from('check_history')
+        .select('*')
+        .order('time', { ascending: false });
+
+    if (assetId) {
+        query = query.eq('asset_id', assetId.trim());
+    }
+
+    const { data, error } = await query;
+    if (error) {
+        console.error('[History] getCheckHistory error:', error.message);
+        return [];
+    }
+
     const result: CheckReport[] = [];
-    for (let i = data.length - 1; i >= 1; i--) {
-        const row = data[i];
-        const rowAssetId = String(row[1]).trim();
-        if (assetId && rowAssetId !== String(assetId).trim()) continue;
+    for (const row of (data || [])) {
+        const rowAssetId = String(row.asset_id).trim();
         if (allowedAssetIds && !allowedAssetIds.has(rowAssetId)) continue;
         result.push({
-            row: i + 1,
-            time: row[0] || '',
-            assetId: row[1] || '',
-            reporter: row[2] || '',
-            status: row[3] || '',
-            note: row[4] || '',
+            row: row.id,
+            time: row.time ? formatDateTime(new Date(row.time)) : '',
+            assetId: row.asset_id || '',
+            reporter: row.reporter || '',
+            status: row.status || '',
+            note: row.note || '',
         });
     }
     return result;
@@ -59,28 +65,26 @@ export async function getRepairHistory(assetId?: string, userCtx?: UserContext):
         }
     }
 
-    const data = await getSheetValues(SHEET_NAMES.HISTORY_REPAIR);
+    let query = supabase
+        .from('repair_history')
+        .select('*')
+        .order('time', { ascending: false });
+
+    if (assetId) {
+        query = query.eq('asset_id', assetId.trim());
+    }
+
+    const { data, error } = await query;
+    if (error) {
+        console.error('[History] getRepairHistory error:', error.message);
+        return [];
+    }
+
     const result: RepairTicket[] = [];
-    for (let i = data.length - 1; i >= 1; i--) {
-        const row = data[i];
-        const rowAssetId = String(row[1]).trim();
-        if (assetId && rowAssetId !== String(assetId).trim()) continue;
+    for (const row of (data || [])) {
+        const rowAssetId = String(row.asset_id).trim();
         if (allowedAssetIds && !allowedAssetIds.has(rowAssetId)) continue;
-        result.push({
-            source: 'history',
-            row: i + 1,
-            time: row[0] || '',
-            assetId: row[1] || '',
-            person: row[2] || '',
-            issue: row[3] || '',
-            note: row[4] || '',
-            approveStatus: row[5] || '',
-            repairStatus: row[6] || '',
-            result: row[7] || '',
-            handlerNote: row[8] || '',
-            updatedTime: row[9] || '',
-            location: row[10] || '',
-        });
+        result.push(dbToRepairTicket(row, 'history'));
     }
     return result;
 }
@@ -93,44 +97,50 @@ export async function getPendingChecks(userCtx?: UserContext): Promise<CheckRepo
     let allowedAssetIds: Set<string> | null = null;
     if (userCtx && userCtx.role !== 'admin_full' && userCtx.role !== 'admin_holder') {
         if (userCtx.role === 'guest') {
-            // Guests can't list ALL pending checks normally, but the Lookup API filters it.
-            // We'll allow it here so the filter works.
-            return (await getSheetValues(SHEET_NAMES.PENDING_CHECK))
-                .slice(1)
-                .filter(row => String(row[5]) === 'Chờ duyệt')
-                .map((row, i) => ({
-                    row: i + 2,
-                    time: row[0] || '',
-                    assetId: row[1] || '',
-                    reporter: row[2] || '',
-                    status: row[3] || '',
-                    note: row[4] || '',
-                    approveStatus: row[5] || '',
-                    location: row[6] || '',
-                }));
+            const { data } = await supabase
+                .from('pending_checks')
+                .select('*')
+                .eq('approve_status', 'Chờ duyệt')
+                .order('time', { ascending: false });
+            return (data || []).map(row => ({
+                row: row.id,
+                time: row.time ? formatDateTime(new Date(row.time)) : '',
+                assetId: row.asset_id || '',
+                reporter: row.reporter || '',
+                status: row.status || '',
+                note: row.note || '',
+                approveStatus: row.approve_status || '',
+                location: row.location || '',
+            }));
         }
         const allowedAssets = await getAllAssets(userCtx);
         allowedAssetIds = new Set(allowedAssets.map(a => String(a.id).trim()));
     }
 
-    const data = await getSheetValues(SHEET_NAMES.PENDING_CHECK);
-    if (data.length <= 1) return [];
+    const { data, error } = await supabase
+        .from('pending_checks')
+        .select('*')
+        .eq('approve_status', 'Chờ duyệt')
+        .order('time', { ascending: false });
+
+    if (error) {
+        console.error('[History] getPendingChecks error:', error.message);
+        return [];
+    }
+
     const result: CheckReport[] = [];
-    for (let i = data.length - 1; i >= 1; i--) {
-        const row = data[i];
-        const rowAssetId = String(row[1]).trim();
-        if (String(row[5]) !== 'Chờ duyệt') continue;
+    for (const row of (data || [])) {
+        const rowAssetId = String(row.asset_id).trim();
         if (allowedAssetIds && !allowedAssetIds.has(rowAssetId)) continue;
-        if (String(row[5]) !== 'Chờ duyệt') continue;
         result.push({
-            row: i + 1,
-            time: row[0] || '',
-            assetId: row[1] || '',
-            reporter: row[2] || '',
-            status: row[3] || '',
-            note: row[4] || '',
-            approveStatus: row[5] || '',
-            location: row[6] || '',
+            row: row.id,
+            time: row.time ? formatDateTime(new Date(row.time)) : '',
+            assetId: row.asset_id || '',
+            reporter: row.reporter || '',
+            status: row.status || '',
+            note: row.note || '',
+            approveStatus: row.approve_status || '',
+            location: row.location || '',
         });
     }
     return result;
@@ -144,17 +154,23 @@ export async function createCheckReport(data: {
     location: string;
 }): Promise<{ success: boolean; message: string }> {
     try {
-        // Ensure header
-        const current = await getSheetValues(SHEET_NAMES.PENDING_CHECK);
-        if (current.length === 0) {
-            await appendSheetRow(SHEET_NAMES.PENDING_CHECK, [
-                'Thời gian', 'Mã TS', 'Người kiểm', 'Trạng thái', 'Ghi chú', 'Trạng thái duyệt', 'Vị trí',
-            ]);
-        }
-        const rowIndex = await appendSheetRow(SHEET_NAMES.PENDING_CHECK, [
-            formatDateTime(new Date()), data.assetId, data.reporter,
-            data.status, data.note, 'Chờ duyệt', data.location,
-        ]);
+        const { data: inserted, error } = await supabase
+            .from('pending_checks')
+            .insert({
+                time: new Date().toISOString(),
+                asset_id: data.assetId,
+                reporter: data.reporter,
+                status: data.status,
+                note: data.note,
+                approve_status: 'Chờ duyệt',
+                location: data.location,
+            })
+            .select('id')
+            .single();
+
+        if (error) throw error;
+
+        const rowIndex = inserted?.id || 0;
 
         const message = `📋 <b>CÓ PHIẾU KIỂM KÊ MỚI!</b>\n\n` +
             `📍 <b>Máy:</b> ${data.assetId}\n` +
@@ -172,11 +188,14 @@ export async function createCheckReport(data: {
             ]
         } : undefined;
 
-        await sendTelegramMessage(message, markup).catch(console.error);
+        const messageId = await sendTelegramMessage(message, markup).catch(console.error);
+        if (messageId && rowIndex > 0) {
+            await kv.set(`tg_msg_check_pending_${rowIndex}`, messageId).catch(console.error);
+        }
 
         return { success: true, message: 'Đã gửi báo cáo kiểm kê!' };
-    } catch (e) {
-        return { success: false, message: 'Lỗi: ' + String(e) };
+    } catch (e: any) {
+        return { success: false, message: 'Lỗi: ' + String(e.message || e) };
     }
 }
 
@@ -186,25 +205,57 @@ export async function approveCheck(
     status?: string
 ): Promise<{ success: boolean; message: string }> {
     try {
-        const pendingData = await getSheetValues(SHEET_NAMES.PENDING_CHECK);
-        const row = pendingData[rowIndex - 1];
+        const { data: row, error: fetchErr } = await supabase
+            .from('pending_checks')
+            .select('*')
+            .eq('id', rowIndex)
+            .single();
 
-        const finalAssetId = assetId || String(row[1] || '').trim();
-        const finalStatus = status || String(row[3] || '').trim();
+        if (fetchErr || !row) throw fetchErr || new Error('Row not found');
+
+        const finalAssetId = assetId || String(row.asset_id || '').trim();
+        const finalStatus = status || String(row.status || '').trim();
 
         // Ghi vào lịch sử kiểm kê
-        await appendSheetRow(SHEET_NAMES.HISTORY_CHECK, [
-            row[0], row[1], row[2], row[3], row[4],
-        ]);
+        await supabase.from('check_history').insert({
+            time: row.time,
+            asset_id: row.asset_id,
+            reporter: row.reporter,
+            status: row.status,
+            note: row.note,
+        });
+
         // Cập nhật trạng thái tài sản
         if (finalAssetId && finalStatus) {
             await updateAssetStatus(finalAssetId, finalStatus);
         }
-        // Đánh dấu đã duyệt
-        await updateSheetCell(SHEET_NAMES.PENDING_CHECK, rowIndex, 6, 'Đã duyệt');
+
+        // Đồng bộ lên Telegram
+        try {
+            const messageId = await kv.get<number>(`tg_msg_check_pending_${rowIndex}`);
+            if (messageId) {
+                const newText = `📋 <b>CÓ PHIẾU KIỂM KÊ MỚI!</b>\n\n` +
+                    `📍 <b>Máy:</b> ${row.asset_id}\n` +
+                    `👤 <b>Người kiểm:</b> ${row.reporter}\n` +
+                    `📊 <b>Trạng thái:</b> ${row.status}\n` +
+                    `📝 <b>Ghi chú:</b> ${row.note || 'Không có'}\n\n` +
+                    `✅ <i>Đã được duyệt báo cáo kiểm kê</i>`;
+                await updateTelegramMessage(TELEGRAM_CHAT_ID, messageId, newText);
+                await kv.del(`tg_msg_check_pending_${rowIndex}`);
+            }
+        } catch (err) {
+            console.error('Failed to sync TG approveCheck', err);
+        }
+
+        // Xóa khỏi pending sau khi đã chuyển sang history
+        await supabase
+            .from('pending_checks')
+            .delete()
+            .eq('id', rowIndex);
+
         return { success: true, message: 'Đã duyệt kiểm kê!' };
-    } catch (e) {
-        return { success: false, message: 'Lỗi: ' + String(e) };
+    } catch (e: any) {
+        return { success: false, message: 'Lỗi: ' + String(e.message || e) };
     }
 }
 
@@ -213,18 +264,48 @@ export async function rejectCheck(
     reason: string
 ): Promise<{ success: boolean; message: string }> {
     try {
-        const pendingData = await getSheetValues(SHEET_NAMES.PENDING_CHECK);
-        const row = pendingData[rowIndex - 1];
+        const { data: row, error: fetchErr } = await supabase
+            .from('pending_checks')
+            .select('*')
+            .eq('id', rowIndex)
+            .single();
 
-        await updateSheetCell(SHEET_NAMES.PENDING_CHECK, rowIndex, 6, 'Từ chối: ' + reason);
+        if (fetchErr || !row) throw fetchErr || new Error('Row not found');
 
-        await appendSheetRow(SHEET_NAMES.HISTORY_CHECK, [
-            row[0], row[1], row[2], 'Từ chối', reason,
-        ]);
+        // Xóa khỏi pending sau khi đã chuyển sang history
+        await supabase
+            .from('pending_checks')
+            .delete()
+            .eq('id', rowIndex);
+
+        await supabase.from('check_history').insert({
+            time: row.time,
+            asset_id: row.asset_id,
+            reporter: row.reporter,
+            status: 'Từ chối',
+            note: reason,
+        });
+
+        // Đồng bộ lên Telegram
+        try {
+            const messageId = await kv.get<number>(`tg_msg_check_pending_${rowIndex}`);
+            if (messageId) {
+                const newText = `📋 <b>CÓ PHIẾU KIỂM KÊ MỚI!</b>\n\n` +
+                    `📍 <b>Máy:</b> ${row.asset_id}\n` +
+                    `👤 <b>Người kiểm:</b> ${row.reporter}\n` +
+                    `📊 <b>Trạng thái:</b> ${row.status}\n` +
+                    `📝 <b>Ghi chú:</b> ${row.note || 'Không có'}\n\n` +
+                    `❌ <i>Đã từ chối báo cáo kiểm kê</i>`;
+                await updateTelegramMessage(TELEGRAM_CHAT_ID, messageId, newText);
+                await kv.del(`tg_msg_check_pending_${rowIndex}`);
+            }
+        } catch (err) {
+            console.error('Failed to sync TG rejectCheck', err);
+        }
 
         return { success: true, message: 'Đã từ chối báo cáo kiểm kê!' };
-    } catch (e) {
-        return { success: false, message: 'Lỗi: ' + String(e) };
+    } catch (e: any) {
+        return { success: false, message: 'Lỗi: ' + String(e.message || e) };
     }
 }
 
@@ -239,7 +320,9 @@ export async function syncAssetStatusFromRepair(assetId: string, repairStatus: s
         newStatus = 'Hỏng';
     } else if (repairStatus === 'Đã sửa xong') {
         newStatus = 'Đang sử dụng';
-    } else if (repairStatus === 'Đang xử lý' || repairStatus === 'Đã giao đơn vị ngoài xử lý') {
+    } else if (repairStatus === 'Đã giao đơn vị ngoài xử lý') {
+        newStatus = 'Đã giao đơn vị ngoài xử lý';
+    } else if (repairStatus === 'Đang xử lý') {
         newStatus = 'Đang sửa chữa';
     } else if (repairStatus === 'Chưa xử lý') {
         newStatus = 'Cần sửa';
@@ -252,53 +335,33 @@ export async function getPendingRepairs(userCtx?: UserContext): Promise<RepairTi
     let allowedAssetIds: Set<string> | null = null;
     if (userCtx && userCtx.role !== 'admin_full' && userCtx.role !== 'admin_holder') {
         if (userCtx.role === 'guest') {
-            return (await getSheetValues(SHEET_NAMES.PENDING_REPAIR))
-                .slice(1)
-                .filter(row => String(row[5]) === 'Chờ duyệt')
-                .map((row, i) => ({
-                    source: 'pending',
-                    row: i + 2,
-                    time: row[0] || '',
-                    assetId: row[1] || '',
-                    person: row[2] || '',
-                    issue: row[3] || '',
-                    note: row[4] || '',
-                    approveStatus: row[5] || 'Chờ duyệt',
-                    repairStatus: row[6] || 'Chưa xử lý',
-                    result: row[7] || 'Chưa hoàn thành',
-                    handlerNote: row[8] || '',
-                    updatedTime: row[9] || '',
-                    location: row[10] || '',
-                }));
+            const { data } = await supabase
+                .from('pending_repairs')
+                .select('*')
+                .eq('approve_status', 'Chờ duyệt')
+                .order('time', { ascending: false });
+            return (data || []).map(row => dbToRepairTicket(row, 'pending'));
         }
         const allowedAssets = await getAllAssets(userCtx);
         allowedAssetIds = new Set(allowedAssets.map(a => String(a.id).trim()));
     }
 
-    const data = await getSheetValues(SHEET_NAMES.PENDING_REPAIR);
-    if (data.length <= 1) return [];
+    const { data, error } = await supabase
+        .from('pending_repairs')
+        .select('*')
+        .eq('approve_status', 'Chờ duyệt')
+        .order('time', { ascending: false });
+
+    if (error) {
+        console.error('[History] getPendingRepairs error:', error.message);
+        return [];
+    }
+
     const result: RepairTicket[] = [];
-    for (let i = data.length - 1; i >= 1; i--) {
-        const row = data[i];
-        const rowAssetId = String(row[1]).trim();
-        if (String(row[5]) !== 'Chờ duyệt') continue;
+    for (const row of (data || [])) {
+        const rowAssetId = String(row.asset_id).trim();
         if (allowedAssetIds && !allowedAssetIds.has(rowAssetId)) continue;
-        if (String(row[5]) !== 'Chờ duyệt') continue;
-        result.push({
-            source: 'pending',
-            row: i + 1,
-            time: row[0] || '',
-            assetId: row[1] || '',
-            person: row[2] || '',
-            issue: row[3] || '',
-            note: row[4] || '',
-            approveStatus: row[5] || 'Chờ duyệt',
-            repairStatus: row[6] || 'Chưa xử lý',
-            result: row[7] || 'Chưa hoàn thành',
-            handlerNote: row[8] || '',
-            updatedTime: row[9] || '',
-            location: row[10] || '',
-        });
+        result.push(dbToRepairTicket(row, 'pending'));
     }
     return result;
 }
@@ -308,21 +371,51 @@ export async function updateRepairHistory(
     data: ApproveRepairData
 ): Promise<{ success: boolean; message: string }> {
     try {
-        await updateSheetCell(SHEET_NAMES.HISTORY_REPAIR, rowIndex, 7, data.repairStatus);
-        await updateSheetCell(SHEET_NAMES.HISTORY_REPAIR, rowIndex, 8, data.result);
-        await updateSheetCell(SHEET_NAMES.HISTORY_REPAIR, rowIndex, 9, data.handlerNote);
-        await updateSheetCell(SHEET_NAMES.HISTORY_REPAIR, rowIndex, 10, formatDateTime(new Date()));
+        const { error } = await supabase
+            .from('repair_history')
+            .update({
+                repair_status: data.repairStatus,
+                result: data.result,
+                handler_note: data.handlerNote,
+                updated_time: new Date().toISOString(),
+            })
+            .eq('id', rowIndex);
 
-        // Extract assetId from the historical row
-        const sheetData = await getSheetValues(SHEET_NAMES.HISTORY_REPAIR);
-        const row = sheetData[rowIndex - 1];
-        if (row && row[1]) {
-            await syncAssetStatusFromRepair(row[1], data.repairStatus, data.result);
+        if (error) throw error;
+
+        // Extract full details from the historical row
+        const { data: row } = await supabase
+            .from('repair_history')
+            .select('*')
+            .eq('id', rowIndex)
+            .single();
+
+        if (row?.asset_id) {
+            await syncAssetStatusFromRepair(row.asset_id, data.repairStatus, data.result);
+        }
+
+        // Đồng bộ lên Telegram
+        try {
+            const messageId = await kv.get<number>(`tg_msg_repair_history_${rowIndex}`);
+            if (messageId && row) {
+                const newText = `🚨 <b>CÓ PHIẾU BÁO HỎNG MỚI!</b>\n\n` +
+                    `📍 <b>Máy:</b> ${row.asset_id}\n` +
+                    `👤 <b>Người báo:</b> ${row.person}\n` +
+                    `⚠️ <b>Lỗi:</b> ${row.issue}\n` +
+                    `📝 <b>Ghi chú:</b> ${row.note || 'Không có'}\n` +
+                    `🏢 <b>Vị trí:</b> ${row.location || 'Không xác định'}\n\n` +
+                    `🎉 <i>Đã cập nhật: ${data.repairStatus} - ${data.result}</i>` +
+                    (data.handlerNote ? `\n\n💬 <b>Ghi chú Xử Lý:</b> ${data.handlerNote}` : '');
+
+                await updateTelegramMessage(TELEGRAM_CHAT_ID, messageId, newText, { inline_keyboard: [] });
+            }
+        } catch (err) {
+            console.error('Failed to sync TG updateRepair', err);
         }
 
         return { success: true, message: 'Đã cập nhật trạng thái sửa chữa!' };
-    } catch (e) {
-        return { success: false, message: 'Lỗi: ' + String(e) };
+    } catch (e: any) {
+        return { success: false, message: 'Lỗi: ' + String(e.message || e) };
     }
 }
 
@@ -334,21 +427,30 @@ export async function createRepairTicket(data: {
     location: string;
 }): Promise<{ success: boolean; message: string }> {
     try {
-        const current = await getSheetValues(SHEET_NAMES.PENDING_REPAIR);
-        if (current.length === 0) {
-            await appendSheetRow(SHEET_NAMES.PENDING_REPAIR, [
-                'Thời gian', 'Mã TS', 'Người báo', 'Nội dung lỗi', 'Ghi chú',
-                'Trạng thái duyệt', 'Trạng thái sửa chữa', 'Kết quả', 'Ghi chú xử lý', 'Lần cập nhật', 'Vị trí',
-            ]);
-        }
-        const rowIndex = await appendSheetRow(SHEET_NAMES.PENDING_REPAIR, [
-            formatDateTime(new Date()), data.assetId, data.reporter,
-            data.issue, data.note, 'Chờ duyệt', 'Chưa xử lý', 'Chưa hoàn thành', '', '', data.location,
-        ]);
+        const { data: inserted, error } = await supabase
+            .from('pending_repairs')
+            .insert({
+                time: new Date().toISOString(),
+                asset_id: data.assetId,
+                person: data.reporter,
+                issue: data.issue,
+                note: data.note,
+                approve_status: 'Chờ duyệt',
+                repair_status: 'Chưa xử lý',
+                result: 'Chưa hoàn thành',
+                handler_note: '',
+                updated_time: null,
+                location: data.location,
+            })
+            .select('id')
+            .single();
+
+        if (error) throw error;
+
+        const rowIndex = inserted?.id || 0;
 
         await syncAssetStatusFromRepair(data.assetId, 'Chưa xử lý');
 
-        // Send Telegram notification for new ticket
         const message = `🚨 <b>CÓ PHIẾU BÁO HỎNG MỚI!</b>\n\n` +
             `📍 <b>Máy:</b> ${data.assetId}\n` +
             `👤 <b>Người báo:</b> ${data.reporter}\n` +
@@ -365,11 +467,14 @@ export async function createRepairTicket(data: {
             ]
         } : undefined;
 
-        await sendTelegramMessage(message, markup).catch(console.error);
+        const messageId = await sendTelegramMessage(message, markup).catch(console.error);
+        if (messageId && rowIndex > 0) {
+            await kv.set(`tg_msg_repair_pending_${rowIndex}`, messageId).catch(console.error);
+        }
 
         return { success: true, message: 'Đã gửi phiếu sửa chữa!' };
-    } catch (e) {
-        return { success: false, message: 'Lỗi: ' + String(e) };
+    } catch (e: any) {
+        return { success: false, message: 'Lỗi: ' + String(e.message || e) };
     }
 }
 
@@ -378,36 +483,83 @@ export async function approveRepair(
     data?: ApproveRepairData
 ): Promise<{ success: boolean; message: string; historyRowIndex?: number }> {
     try {
-        const pendingData = await getSheetValues(SHEET_NAMES.PENDING_REPAIR);
-        const row = pendingData[rowIndex - 1];
+        const { data: row, error: fetchErr } = await supabase
+            .from('pending_repairs')
+            .select('*')
+            .eq('id', rowIndex)
+            .single();
+
+        if (fetchErr || !row) throw fetchErr || new Error('Row not found');
 
         const repairStatus = data?.repairStatus || 'Đang xử lý';
         const result = data?.result || 'Chưa hoàn thành';
         const handlerNote = data?.handlerNote || '';
-        const updatedTime = formatDateTime(new Date());
+        const updatedTime = new Date().toISOString();
 
-        await updateSheetCell(SHEET_NAMES.PENDING_REPAIR, rowIndex, 6, 'Đã duyệt');
-        const historyRowIndex = await appendSheetRow(SHEET_NAMES.HISTORY_REPAIR, [
-            row[0], row[1], row[2], row[3], row[4],
-            'Đã duyệt', repairStatus, result, handlerNote,
-            updatedTime, row[10],
-        ]);
+        // Xóa khỏi pending sau khi chuyển sang history bên dưới
 
-        if (row && row[1]) {
-            await syncAssetStatusFromRepair(row[1], repairStatus, result);
+        const { data: historyRow, error: insertErr } = await supabase
+            .from('repair_history')
+            .insert({
+                time: row.time,
+                asset_id: row.asset_id,
+                person: row.person,
+                issue: row.issue,
+                note: row.note,
+                approve_status: 'Đã duyệt',
+                repair_status: repairStatus,
+                result: result,
+                handler_note: handlerNote,
+                updated_time: updatedTime,
+                location: row.location,
+            })
+            .select('id')
+            .single();
+
+        if (insertErr) throw insertErr;
+
+        // Xóa khỏi pending_repairs sau khi đã chuyển thành công sang history
+        await supabase
+            .from('pending_repairs')
+            .delete()
+            .eq('id', rowIndex);
+
+        if (row.asset_id) {
+            await syncAssetStatusFromRepair(row.asset_id, repairStatus, result);
         }
 
-        // We comment this Telegram send out, or remove it,
-        // because we only want to reply directly to the inline keyboard via the Webhook,
-        // OR let it notify a different channel if needed.
-        // For now let's just not send the redundant message, as the webhook will edit the existing message.
-        // Wait, what if it's approved from the Web App? Then we DO want to send a message.
-        // Let's keep it, but it's a separate notification. 
-        // We will just let the Webhook handle editing the old message.
+        // Đồng bộ lên Telegram
+        try {
+            const messageId = await kv.get<number>(`tg_msg_repair_pending_${rowIndex}`);
+            if (messageId && historyRow?.id) {
+                const newText = `🚨 <b>CÓ PHIẾU BÁO HỎNG MỚI!</b>\n\n` +
+                    `📍 <b>Máy:</b> ${row.asset_id}\n` +
+                    `👤 <b>Người báo:</b> ${row.person}\n` +
+                    `⚠️ <b>Lỗi:</b> ${row.issue}\n` +
+                    `📝 <b>Ghi chú:</b> ${row.note || 'Không có'}\n` +
+                    `🏢 <b>Vị trí:</b> ${row.location || 'Không xác định'}\n\n` +
+                    `✅ <i>Đã duyệt phiếu (Đang xử lý). Chọn trạng thái sửa chữa:</i>`;
 
-        return { success: true, message: 'Đã duyệt phiếu sửa chữa!', historyRowIndex };
-    } catch (e) {
-        return { success: false, message: 'Lỗi: ' + String(e) };
+                const newMarkup = {
+                    inline_keyboard: [
+                        [
+                            { text: 'Đang sửa chữa', callback_data: `st_${historyRow.id}_Đang sửa chữa` },
+                            { text: 'Đã giao ĐV ngoài xử lý', callback_data: `st_${historyRow.id}_Đã giao đơn vị ngoài xử lý` }
+                        ]
+                    ]
+                };
+
+                await updateTelegramMessage(TELEGRAM_CHAT_ID, messageId, newText, newMarkup);
+                await kv.set(`tg_msg_repair_history_${historyRow.id}`, messageId);
+                await kv.del(`tg_msg_repair_pending_${rowIndex}`);
+            }
+        } catch (err) {
+            console.error('Failed to sync TG approveRepair', err);
+        }
+
+        return { success: true, message: 'Đã duyệt phiếu sửa chữa!', historyRowIndex: historyRow?.id };
+    } catch (e: any) {
+        return { success: false, message: 'Lỗi: ' + String(e.message || e) };
     }
 }
 
@@ -416,25 +568,63 @@ export async function rejectRepair(
     reason: string
 ): Promise<{ success: boolean; message: string }> {
     try {
-        const pendingData = await getSheetValues(SHEET_NAMES.PENDING_REPAIR);
-        const row = pendingData[rowIndex - 1];
+        const { data: row, error: fetchErr } = await supabase
+            .from('pending_repairs')
+            .select('*')
+            .eq('id', rowIndex)
+            .single();
 
-        const updatedTime = formatDateTime(new Date());
+        if (fetchErr || !row) throw fetchErr || new Error('Row not found');
 
-        await updateSheetCell(SHEET_NAMES.PENDING_REPAIR, rowIndex, 6, 'Từ chối: ' + reason);
-        await appendSheetRow(SHEET_NAMES.HISTORY_REPAIR, [
-            row[0], row[1], row[2], row[3], row[4],
-            'Từ chối', '', '', 'Lý do: ' + reason,
-            updatedTime, row[10],
-        ]);
+        const updatedTime = new Date().toISOString();
 
-        if (row && row[1]) {
-            await updateAssetStatus(row[1], 'Đang sử dụng');
+        // Xóa khỏi pending sau khi đã chuyển sang history bên dưới
+
+        await supabase.from('repair_history').insert({
+            time: row.time,
+            asset_id: row.asset_id,
+            person: row.person,
+            issue: row.issue,
+            note: row.note,
+            approve_status: 'Từ chối',
+            repair_status: '',
+            result: '',
+            handler_note: 'Lý do: ' + reason,
+            updated_time: updatedTime,
+            location: row.location,
+        });
+
+        // Xóa khỏi pending_repairs sau khi đã chuyển sang history
+        await supabase
+            .from('pending_repairs')
+            .delete()
+            .eq('id', rowIndex);
+
+        if (row.asset_id) {
+            await updateAssetStatus(row.asset_id, 'Đang sử dụng');
+        }
+
+        // Đồng bộ lên Telegram
+        try {
+            const messageId = await kv.get<number>(`tg_msg_repair_pending_${rowIndex}`);
+            if (messageId) {
+                const newText = `🚨 <b>CÓ PHIẾU BÁO HỎNG MỚI!</b>\n\n` +
+                    `📍 <b>Máy:</b> ${row.asset_id}\n` +
+                    `👤 <b>Người báo:</b> ${row.person}\n` +
+                    `⚠️ <b>Lỗi:</b> ${row.issue}\n` +
+                    `📝 <b>Ghi chú:</b> ${row.note || 'Không có'}\n` +
+                    `🏢 <b>Vị trí:</b> ${row.location || 'Không xác định'}\n\n` +
+                    `❌ <i>Đã từ chối phiếu sửa chữa</i>`;
+                await updateTelegramMessage(TELEGRAM_CHAT_ID, messageId, newText);
+                await kv.del(`tg_msg_repair_pending_${rowIndex}`);
+            }
+        } catch (err) {
+            console.error('Failed to sync TG rejectRepair', err);
         }
 
         return { success: true, message: 'Đã từ chối phiếu sửa chữa!' };
-    } catch (e) {
-        return { success: false, message: 'Lỗi: ' + String(e) };
+    } catch (e: any) {
+        return { success: false, message: 'Lỗi: ' + String(e.message || e) };
     }
 }
 
@@ -442,11 +632,47 @@ export async function deletePendingRepair(
     rowIndex: number
 ): Promise<{ success: boolean; message: string }> {
     try {
-        if (rowIndex <= 1) return { success: false, message: 'Không thể xóa hàng tiêu đề!' };
-        await deleteSheetRow(SHEET_NAMES.PENDING_REPAIR, rowIndex);
+        const { error } = await supabase
+            .from('pending_repairs')
+            .delete()
+            .eq('id', rowIndex);
+
+        if (error) throw error;
         return { success: true, message: 'Đã xóa phiếu sửa chữa!' };
-    } catch (e) {
-        return { success: false, message: 'Lỗi: ' + String(e) };
+    } catch (e: any) {
+        return { success: false, message: 'Lỗi: ' + String(e.message || e) };
+    }
+}
+
+export async function deletePendingCheck(
+    rowIndex: number
+): Promise<{ success: boolean; message: string }> {
+    try {
+        const { error } = await supabase
+            .from('pending_checks')
+            .delete()
+            .eq('id', rowIndex);
+
+        if (error) throw error;
+        return { success: true, message: 'Đã xóa phiếu kiểm kê!' };
+    } catch (e: any) {
+        return { success: false, message: 'Lỗi: ' + String(e.message || e) };
+    }
+}
+
+export async function deleteCheckHistory(
+    rowIndex: number
+): Promise<{ success: boolean; message: string }> {
+    try {
+        const { error } = await supabase
+            .from('check_history')
+            .delete()
+            .eq('id', rowIndex);
+
+        if (error) throw error;
+        return { success: true, message: 'Đã xóa lịch sử kiểm kê!' };
+    } catch (e: any) {
+        return { success: false, message: 'Lỗi: ' + String(e.message || e) };
     }
 }
 
@@ -457,14 +683,23 @@ export async function getAllRepairTickets(userCtx?: UserContext): Promise<Repair
     const [pending, history, assets] = await Promise.all([
         getPendingRepairs(userCtx),
         getRepairHistory(undefined, userCtx),
-        getAllAssets(userCtx),
+        getAllAssets(userCtx), // Note: Future refactor could add a select param to getAllAssets if DB grows huge.
     ]);
 
-    // Create lookup map for asset names
-    const assetMap = Object.fromEntries(assets.map(a => [a.id, a.name]));
+    // O(N) mapping for asset names
+    const assetMap: Record<string, string> = {};
+    for (const a of assets) {
+        assetMap[a.id] = a.name;
+    }
 
-    const mapName = (tickets: RepairTicket[]) =>
-        tickets.map(t => ({ ...t, name: assetMap[t.assetId] || '' }));
+    const mapName = (tickets: RepairTicket[]) => {
+        const result = new Array(tickets.length);
+        for (let i = 0; i < tickets.length; i++) {
+            const t = tickets[i];
+            result[i] = { ...t, name: assetMap[t.assetId] || '' };
+        }
+        return result;
+    };
 
     return [...mapName(pending), ...mapName(history)];
 }
@@ -478,4 +713,23 @@ export async function getPendingCounts(userCtx?: UserContext): Promise<{ kiemke:
         getPendingRepairs(userCtx),
     ]);
     return { kiemke: checks.length, suachua: repairs.length };
+}
+
+// ── Helper: DB row → RepairTicket ──
+function dbToRepairTicket(row: any, source: 'pending' | 'history'): RepairTicket {
+    return {
+        source,
+        row: row.id,
+        time: row.time ? formatDateTime(new Date(row.time)) : '',
+        assetId: row.asset_id || '',
+        person: row.person || '',
+        issue: row.issue || '',
+        note: row.note || '',
+        approveStatus: row.approve_status || '',
+        repairStatus: row.repair_status || '',
+        result: row.result || '',
+        handlerNote: row.handler_note || '',
+        updatedTime: row.updated_time ? formatDateTime(new Date(row.updated_time)) : '',
+        location: row.location || '',
+    };
 }

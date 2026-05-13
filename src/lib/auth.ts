@@ -1,82 +1,57 @@
-import {
-    getSheetValues,
-    appendSheetRow,
-    getSheetsClient,
-    SPREADSHEET_ID,
-    SHEET_NAMES,
-    formatDateTime,
-} from './sheets';
-
 import { UserRole, NguoiDung } from '@/types';
+import { supabase } from './supabase';
+import { formatDateTime } from './date-utils';
+import { kv } from '@vercel/kv';
 
-// ── Ensure NguoiDung sheet exists ────────────────────────────────────────────
-async function ensureNguoiDungSheet() {
-    const sheets = await getSheetsClient();
-    const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
-    const existing = meta.data.sheets?.find(
-        (s) => s.properties?.title === SHEET_NAMES.NGUOI_DUNG
-    );
-    if (!existing) {
-        await sheets.spreadsheets.batchUpdate({
-            spreadsheetId: SPREADSHEET_ID,
-            requestBody: {
-                requests: [{ addSheet: { properties: { title: SHEET_NAMES.NGUOI_DUNG } } }],
-            },
-        });
-        // Write header
-        await sheets.spreadsheets.values.update({
-            spreadsheetId: SPREADSHEET_ID,
-            range: `${SHEET_NAMES.NGUOI_DUNG}!A1:I1`,
-            valueInputOption: 'USER_ENTERED',
-            requestBody: {
-                values: [['Email', 'Tên Google', 'Phòng Ban', 'Tên Chọn', 'Role', 'Ngày Tạo', 'Avatar', 'Trạng Thái', 'Last Active']],
-            },
-        });
-    }
+// ── Ensure NguoiDung table exists (no-op for Supabase, schema already created) ──
+export async function ensureNguoiDungSheet() {
+    // No-op: tables are created via schema.sql
 }
 
-// ── CRUD ─────────────────────────────────────────────────────────────────────
+// ── CRUD ──
 export async function getUserByEmail(email: string): Promise<NguoiDung | null> {
-    await ensureNguoiDungSheet();
-    const rows = await getSheetValues(SHEET_NAMES.NGUOI_DUNG);
-    for (let i = 1; i < rows.length; i++) {
-        const r = rows[i];
-        if ((r[0] || '').toLowerCase() === email.toLowerCase()) {
-            return {
-                rowIndex: i + 1,
-                email: r[0] || '',
-                tenGoogle: r[1] || '',
-                phongBan: r[2] || '',
-                tenChon: r[3] || '',
-                role: (r[4] as UserRole) || 'user_basic',
-                ngayTao: r[5] || '',
-                avatar: r[6] || '',
-                status: (r[7] as any) || (r[2] && r[3] ? 'approved' : 'pending'), // Legacy users with dept/name are approved
-                lastActive: r[8] || '',
-            };
-        }
+    const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', email)
+        .maybeSingle();
+
+    if (error) {
+        console.error('[Auth] getUserByEmail error:', error.message);
+        return null;
     }
-    return null;
+    if (!data) return null;
+    return dbToUser(data);
 }
 
 export async function createUser(email: string, tenGoogle: string, avatar?: string): Promise<NguoiDung> {
-    await ensureNguoiDungSheet();
-    const now = formatDateTime(new Date());
-    await appendSheetRow(SHEET_NAMES.NGUOI_DUNG, [
-        email, tenGoogle, '', '', 'user_basic', now, avatar || '', 'pending', now
-    ]);
-    return {
-        rowIndex: -1,
-        email,
-        tenGoogle,
-        phongBan: '',
-        tenChon: '',
-        role: 'user_basic',
-        ngayTao: now,
-        avatar,
-        status: 'pending',
-        lastActive: now,
-    };
+    const now = new Date().toISOString();
+
+    const { data, error } = await supabase
+        .from('users')
+        .insert({
+            email,
+            ten_google: tenGoogle,
+            phong_ban: '',
+            ten_chon: '',
+            role: 'user_basic',
+            ngay_tao: now,
+            avatar: avatar || '',
+            status: 'pending',
+            last_active: now,
+        })
+        .select()
+        .single();
+
+    if (error) {
+        console.error('[Auth] createUser error:', error.message);
+        // Try to get existing user
+        const existing = await getUserByEmail(email);
+        if (existing) return existing;
+        throw error;
+    }
+
+    return dbToUser(data);
 }
 
 export async function updateUserProfile(
@@ -85,147 +60,163 @@ export async function updateUserProfile(
     tenChon: string,
     roleOverride?: UserRole
 ): Promise<{ success: boolean }> {
-    await ensureNguoiDungSheet();
-    const rows = await getSheetValues(SHEET_NAMES.NGUOI_DUNG);
-    for (let i = 1; i < rows.length; i++) {
-        if ((rows[i][0] || '').toLowerCase() === email.toLowerCase()) {
-            const sheets = await getSheetsClient();
-            // Update phongBan, tenChon
-            await sheets.spreadsheets.values.update({
-                spreadsheetId: SPREADSHEET_ID,
-                range: `${SHEET_NAMES.NGUOI_DUNG}!C${i + 1}:D${i + 1}`,
-                valueInputOption: 'USER_ENTERED',
-                requestBody: { values: [[phongBan, tenChon]] },
-            });
-            // If role specified (from setup profile)
-            if (roleOverride) {
-                const dbUser = await getUserByEmail(email);
-                const currentRole = dbUser?.role || 'user_basic';
+    const updateData: Record<string, any> = {
+        phong_ban: phongBan,
+        ten_chon: tenChon,
+        status: 'approved',
+    };
 
-                // Allow upgrade from user_basic to anything, or setting anything from nothing
-                if (currentRole === 'user_basic' || roleOverride !== 'user_basic') {
-                    await sheets.spreadsheets.values.update({
-                        spreadsheetId: SPREADSHEET_ID,
-                        range: `${SHEET_NAMES.NGUOI_DUNG}!E${i + 1}`,
-                        valueInputOption: 'USER_ENTERED',
-                        requestBody: { values: [[roleOverride]] },
-                    });
-                }
-            }
-
-            // Auto-approve guests only. Employees need manual approval.
-            if (roleOverride === 'guest') {
-                await sheets.spreadsheets.values.update({
-                    spreadsheetId: SPREADSHEET_ID,
-                    range: `${SHEET_NAMES.NGUOI_DUNG}!H${i + 1}`,
-                    valueInputOption: 'USER_ENTERED',
-                    requestBody: { values: [['approved']] },
-                });
-            }
-
-            return { success: true };
-        }
+    if (roleOverride) {
+        updateData.role = roleOverride;
     }
-    return { success: false };
+
+    // Check if user exists
+    const existing = await getUserByEmail(email);
+    if (!existing) {
+        return { success: false };
+    }
+
+    // If user is the first admin or has a specific role, preserve it
+    if (existing.role === 'admin_full' && !roleOverride) {
+        // Don't override admin_full unless explicitly specified
+    } else if (roleOverride) {
+        updateData.role = roleOverride;
+    }
+
+    const { error } = await supabase
+        .from('users')
+        .update(updateData)
+        .eq('email', email);
+
+    if (error) {
+        console.error('[Auth] updateUserProfile error:', error.message);
+        return { success: false };
+    }
+    return { success: true };
 }
 
 export async function updateUserRole(email: string, role: UserRole): Promise<{ success: boolean }> {
-    await ensureNguoiDungSheet();
-    const rows = await getSheetValues(SHEET_NAMES.NGUOI_DUNG);
-    for (let i = 1; i < rows.length; i++) {
-        if ((rows[i][0] || '').toLowerCase() === email.toLowerCase()) {
-            const sheets = await getSheetsClient();
-            await sheets.spreadsheets.values.update({
-                spreadsheetId: SPREADSHEET_ID,
-                range: `${SHEET_NAMES.NGUOI_DUNG}!E${i + 1}`,
-                valueInputOption: 'USER_ENTERED',
-                requestBody: { values: [[role]] },
-            });
-            return { success: true };
-        }
+    const { error } = await supabase
+        .from('users')
+        .update({ role })
+        .eq('email', email);
+
+    if (error) {
+        console.error('[Auth] updateUserRole error:', error.message);
+        return { success: false };
     }
-    return { success: false };
+    return { success: true };
 }
 
 export async function updateUserStatus(email: string, status: string): Promise<{ success: boolean }> {
-    await ensureNguoiDungSheet();
-    const rows = await getSheetValues(SHEET_NAMES.NGUOI_DUNG);
-    for (let i = 1; i < rows.length; i++) {
-        if ((rows[i][0] || '').toLowerCase() === email.toLowerCase()) {
-            const sheets = await getSheetsClient();
-            await sheets.spreadsheets.values.update({
-                spreadsheetId: SPREADSHEET_ID,
-                range: `${SHEET_NAMES.NGUOI_DUNG}!H${i + 1}`,
-                valueInputOption: 'USER_ENTERED',
-                requestBody: { values: [[status]] },
-            });
-            return { success: true };
-        }
+    const { error } = await supabase
+        .from('users')
+        .update({ status })
+        .eq('email', email);
+
+    if (error) {
+        console.error('[Auth] updateUserStatus error:', error.message);
+        return { success: false };
     }
-    return { success: false };
+
+    // Set KV status to invoke real-time ban via Middleware
+    try {
+        await kv.set(`status:${email}`, status);
+    } catch (e) { console.error('Redis set status error', e); }
+
+    return { success: true };
 }
 
 const onlineUsersCache = new Map<string, number>();
 
-export async function trackUserActivity(email: string): Promise<void> {
-    try {
-        onlineUsersCache.set(email.toLowerCase(), Date.now());
-        // We purposely STOP writing this to Google Sheets to save massive amounts of API Quota.
-        // It's not necessary to permanently store the exact minute someone was last online.
-    } catch (e) {
-        console.error('Error tracking activity:', e);
+export async function trackUserActivity(email: string, ip?: string): Promise<void> {
+    onlineUsersCache.set(email, Date.now());
+
+    // Fire and forget but tracked in promises array
+    const pUpdate = (async () => {
+        await supabase
+            .from('users')
+            .update({ last_active: new Date().toISOString() })
+            .eq('email', email);
+    })();
+
+    const promises: Promise<any>[] = [pUpdate];
+
+    if (ip) {
+        promises.push(
+            (async () => {
+                try {
+                    const key = `ips:${email}`;
+                    const currentIps = await kv.lrange(key, 0, 0);
+                    // Only push if the current latest IP is different to avoid spamming the same IP
+                    if (currentIps[0] !== ip) {
+                        await kv.lpush(key, ip);
+                        await kv.ltrim(key, 0, 2); // Keep last 3 IPs
+                    }
+                } catch (e) { console.error('Redis IP tracking error', e); }
+            })()
+        );
     }
+
+    await Promise.allSettled(promises);
 }
 
 export async function getOnlineUsers(): Promise<number> {
-    try {
-        const now = Date.now();
-        const fiveMins = 5 * 60 * 1000;
-        let count = 0;
-
-        // Clean up old entries while counting to prevent memory leaks over months of uptime
-        for (const [email, lastSeen] of onlineUsersCache.entries()) {
-            if (now - lastSeen < fiveMins) {
-                count++;
-            } else {
-                onlineUsersCache.delete(email); // Cleanup
-            }
-        }
-
-        return count;
-    } catch (e) {
-        return 0;
+    const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+    let count = 0;
+    for (const [, ts] of onlineUsersCache) {
+        if (ts > fiveMinutesAgo) count++;
     }
+    if (count > 0) return count;
+
+    // Fallback: check DB
+    const cutoff = new Date(fiveMinutesAgo).toISOString();
+    const { count: dbCount, error } = await supabase
+        .from('users')
+        .select('*', { count: 'exact', head: true })
+        .gte('last_active', cutoff);
+
+    if (error) return 0;
+    return dbCount || 0;
 }
 
 export async function getAllUsers(): Promise<NguoiDung[]> {
-    await ensureNguoiDungSheet();
-    const rows = await getSheetValues(SHEET_NAMES.NGUOI_DUNG);
-    return rows.slice(1).map((r, idx) => ({
-        rowIndex: idx + 2,
-        email: r[0] || '',
-        tenGoogle: r[1] || '',
-        phongBan: r[2] || '',
-        tenChon: r[3] || '',
-        role: (r[4] as UserRole) || 'user_basic',
-        ngayTao: r[5] || '',
-        avatar: r[6] || '',
-        status: (r[7] as any) || (r[2] && r[3] ? 'approved' : 'pending'),
-        lastActive: r[8] || '',
-    }));
+    const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .order('ngay_tao', { ascending: false });
+
+    if (error) {
+        console.error('[Auth] getAllUsers error:', error.message);
+        return [];
+    }
+
+    const users = (data || []).map(dbToUser);
+
+    try {
+        const pIps = users.map(u => kv.lrange(`ips:${u.email}`, 0, 2));
+        const ipsList = await Promise.all(pIps);
+        users.forEach((u, i) => {
+            u.recentIps = ipsList[i] || [];
+        });
+    } catch (e) {
+        console.error('Redis fetch IPs error', e);
+    }
+
+    return users;
 }
 
-// ── Permission helpers ────────────────────────────────────────────────────────
+// ── Permission helpers ──
 export function canEditAll(role: UserRole) {
-    return role === 'admin_full' || role === 'admin_holder';
+    return role === 'admin_full';
 }
 
 export function canEditDept(role: UserRole) {
-    return role === 'admin_full' || role === 'admin_holder' || role === 'admin_dept';
+    return role === 'admin_full' || role === 'admin_dept';
 }
 
 export function isAdmin(role: UserRole) {
-    return role !== 'user_basic';
+    return role === 'admin_full' || role === 'admin_dept' || role === 'admin_holder';
 }
 
 export function isFullAdmin(role: UserRole) {
@@ -236,36 +227,52 @@ import { UserContext, Asset } from '@/types';
 import { DEPARTMENT_NAMES } from '@/lib/employees';
 
 export function canViewAsset(userCtx: UserContext, asset: Asset): boolean {
+    if (!userCtx) return true;
     const role = userCtx.role as UserRole;
+
     if (role === 'admin_full' || role === 'admin_holder') return true;
+    if (role === 'guest') return true;
 
-    const userDeptName = userCtx.phongBan ? (DEPARTMENT_NAMES[userCtx.phongBan] || userCtx.phongBan) : '';
-
-    // Admin Dept can see all assets in their department
     if (role === 'admin_dept') {
+        const userDeptName = DEPARTMENT_NAMES[userCtx.phongBan || ''] || userCtx.phongBan;
         return asset.location === userDeptName;
     }
 
-    // User Basic can only see their own assets
     if (role === 'user_basic') {
-        return asset.location === userDeptName && asset.person === userCtx.tenChon;
+        const userName = userCtx.tenChon || '';
+        return asset.person === userName;
     }
-
-    // Guest role (Public Lookup) can view the basic info/history
-    if (role === 'guest') return true;
 
     return false;
 }
 
 export function canEditAsset(userCtx: UserContext, asset: Asset): boolean {
+    if (!userCtx) return false;
     const role = userCtx.role as UserRole;
-    if (role === 'admin_full' || role === 'admin_holder') return true;
 
-    const userDeptName = userCtx.phongBan ? (DEPARTMENT_NAMES[userCtx.phongBan] || userCtx.phongBan) : '';
+    if (role === 'admin_full') return true;
+    if (role === 'admin_holder') return true;
 
     if (role === 'admin_dept') {
+        const userDeptName = DEPARTMENT_NAMES[userCtx.phongBan || ''] || userCtx.phongBan;
         return asset.location === userDeptName;
     }
 
     return false;
+}
+
+// ── Helper: DB row → NguoiDung ──
+function dbToUser(row: any): NguoiDung {
+    return {
+        rowIndex: row.id,
+        email: row.email || '',
+        tenGoogle: row.ten_google || '',
+        phongBan: row.phong_ban || '',
+        tenChon: row.ten_chon || '',
+        role: (row.role || 'user_basic') as UserRole,
+        ngayTao: row.ngay_tao ? formatDateTime(new Date(row.ngay_tao)) : '',
+        avatar: row.avatar || '',
+        status: (row.status || 'pending') as 'pending' | 'approved' | 'rejected',
+        lastActive: row.last_active ? formatDateTime(new Date(row.last_active)) : '',
+    };
 }

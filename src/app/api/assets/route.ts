@@ -3,7 +3,6 @@ import { getAllAssets, searchAssets, createAsset } from '@/lib/assets';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/authOptions';
 import { UserContext } from '@/types';
-import { getWithSWR, purgeCache, purgePattern } from '@/lib/kv-cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,13 +25,7 @@ export async function GET(req: NextRequest) {
         const { searchParams } = new URL(req.url);
         const q = searchParams.get('q');
 
-        // Use a unique cache key per user context and query
-        const cacheKey = `assets:${userCtx.role}:${userCtx.phongBan || 'all'}:${q || 'all'}`;
-
-        const assets = await getWithSWR(cacheKey, async () => {
-            return q ? await searchAssets(q, userCtx) : await getAllAssets(userCtx);
-        }, 15, 5); // 15s TTL, 5s stale revalidate
-
+        const assets = q ? await searchAssets(q, userCtx) : await getAllAssets(userCtx);
         return NextResponse.json(assets);
     } catch (e: any) {
         console.error('[API Assets] Fatal error:', e);
@@ -55,9 +48,8 @@ export async function POST(req: NextRequest) {
         };
 
         const body = await req.json();
-        const { id, name, location, year, status, person, specificLocation } = body;
+        const { id, name, location, year, quantity, status, person, specificLocation, oldLocation } = body;
 
-        // Basic permission check for creation
         const role = userCtx.role;
         if (role === 'user_basic' || role === 'guest') {
             return NextResponse.json({ error: 'Bạn không có quyền thêm mới tài sản' }, { status: 403 });
@@ -74,16 +66,10 @@ export async function POST(req: NextRequest) {
         if (!id || !name) {
             return NextResponse.json({ error: 'Mã và Tên tài sản là bắt buộc' }, { status: 400 });
         }
-        const result = await createAsset({ id, name, location, year, status, person, specificLocation });
+        const result = await createAsset({ id, name, location, year, quantity: Number(quantity) || 1, status, person, specificLocation, oldLocation });
         if (!result.success) {
             return NextResponse.json({ error: result.message }, { status: 400 });
         }
-
-        // Invalidate relevant caches
-        await Promise.all([
-            purgePattern('assets:'),
-            purgeCache('dashboard')
-        ]).catch(e => console.warn('[API Assets] Cache invalidation failed:', e));
 
         return NextResponse.json(result);
     } catch (e: any) {

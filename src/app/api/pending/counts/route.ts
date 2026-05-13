@@ -4,8 +4,6 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/authOptions';
 import { UserContext } from '@/types';
 
-import { getWithSWR } from '@/lib/kv-cache';
-
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
@@ -18,9 +16,7 @@ export async function GET() {
             tenChon: (session.user as any).tenChon,
         };
 
-        const cacheKey = `pending:counts:${userCtx.role}:${userCtx.phongBan || 'all'}`;
-        const counts = await getWithSWR(cacheKey, () => getPendingCounts(userCtx), 10, 2);
-
+        const counts = await getPendingCounts(userCtx);
         return NextResponse.json(counts);
     } catch (e) {
         return NextResponse.json({ kiemke: 0, suachua: 0 });

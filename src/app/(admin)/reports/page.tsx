@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Download, LayoutDashboard, Building2, Package, Loader2, TrendingUp, ChevronRight, Clock, Brain, AlertTriangle, AlertCircle } from 'lucide-react';
+import { Download, LayoutDashboard, Building2, Package, Loader2, TrendingUp, ChevronRight, Clock, Brain, AlertTriangle, AlertCircle, Wrench } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { parseViDate } from '@/lib/date-utils';
 import {
@@ -32,16 +32,29 @@ interface DeptReport {
     totalRemaining: number;
 }
 
+interface ServiceItem {
+    row: number;
+    stt: string;
+    loai: string;
+    noiDung: string;
+    donViTinh: string;
+    donGia: number;
+    ghiChu: string;
+    ngayCapNhat: string;
+}
+
 const REPORT_TYPES = [
     { id: 'summary', label: '📊 Tổng hợp tài sản', color: 'indigo' },
     { id: 'finance', label: '💰 Tài chính & Giá trị', color: 'emerald' },
     { id: 'trend', label: '📈 Biểu đồ & Xu hướng', color: 'violet' },
     { id: 'insights', label: '🧠 Phân tích & Cảnh báo', color: 'rose' },
+    { id: 'services', label: '🛠 Bảng giá dịch vụ', color: 'sky' },
 ];
 
 export default function ReportsPage() {
     const [assetData, setAssetData] = useState<AssetReport[]>([]);
     const [deptData, setDeptData] = useState<DeptReport[]>([]);
+    const [serviceData, setServiceData] = useState<ServiceItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [period, setPeriod] = useState<'all' | 'week' | 'month' | 'year'>('month');
     const [reportType, setReportType] = useState<string>('summary');
@@ -52,6 +65,7 @@ export default function ReportsPage() {
             .then(data => {
                 setAssetData(data.assets || []);
                 setDeptData(data.departments || []);
+                setServiceData(data.services || []);
             })
             .catch(console.error)
             .finally(() => setLoading(false));
@@ -243,7 +257,247 @@ export default function ReportsPage() {
         wsWarning['!cols'] = [{ wch: 15 }, { wch: 30 }, { wch: 20 }, { wch: 20 }, { wch: 30 }];
         wsBroken['!cols'] = [{ wch: 15 }, { wch: 30 }, { wch: 20 }, { wch: 15 }, { wch: 20 }, { wch: 20 }];
 
+        // Service pricing sheet
+        if (serviceData.length > 0) {
+            const wsServiceData = serviceData.map(s => ({
+                'Loại': s.loai,
+                'Nội dung': s.noiDung,
+                'Đơn vị tính': s.donViTinh,
+                'Đơn giá (VNĐ)': s.donGia,
+                'Ghi chú': s.ghiChu,
+                'Cập nhật': s.ngayCapNhat,
+            }));
+            const wsService = XLSX.utils.json_to_sheet(wsServiceData);
+            wsService['!cols'] = [{ wch: 25 }, { wch: 30 }, { wch: 15 }, { wch: 15 }, { wch: 25 }, { wch: 20 }];
+            XLSX.utils.book_append_sheet(wb, wsService, 'Bảng giá dịch vụ');
+        }
+
+        // Costed Repairs sheet
+        const parseCost = (note: string): number => {
+            if (!note) return 0;
+            const m = note.match(/TỔNG:\s*([\d.,]+)\s*đ/i);
+            if (!m) return 0;
+            return Number(m[1].replace(/\./g, '').replace(/,/g, '')) || 0;
+        };
+
+        const costedRepairsData = assetData.flatMap(a =>
+            (a.repairs || [])
+                .filter((r: any) => r.handlerNote && parseCost(r.handlerNote) > 0)
+                .map((r: any) => ({
+                    'Ngày/Giờ': r.time?.split(' ')[0] || r.time,
+                    'Mã TS': a.id,
+                    'Tên TS': a.name,
+                    'Phòng / Kho': a.location,
+                    'Người báo': r.person,
+                    'Nội dung lỗi': r.issue,
+                    'Kết quả': r.result || r.repairStatus,
+                    'Chi phí (VNĐ)': parseCost(r.handlerNote),
+                }))
+        ).filter(r => isDateInPeriod(r['Ngày/Giờ'], period))
+            .sort((a, b) => {
+                const da = parseViDate(a['Ngày/Giờ']);
+                const db = parseViDate(b['Ngày/Giờ']);
+                return (db?.getTime() || 0) - (da?.getTime() || 0);
+            });
+
+        if (costedRepairsData.length > 0) {
+            const wsCosts = XLSX.utils.json_to_sheet(costedRepairsData);
+            wsCosts['!cols'] = [{ wch: 15 }, { wch: 15 }, { wch: 30 }, { wch: 20 }, { wch: 15 }, { wch: 30 }, { wch: 20 }, { wch: 15 }];
+            XLSX.utils.book_append_sheet(wb, wsCosts, 'Chi Phí Sửa Chữa');
+        }
+
         XLSX.writeFile(wb, `Bao_Cao_Tai_San_${period}.xlsx`);
+    }
+
+    function renderServicesCostReport() {
+        // Parse cost from handlerNote: pattern "TỔNG: 120.000 đ" or "TỔNG: 120,000 đ"
+        const parseCost = (note: string): number => {
+            if (!note) return 0;
+            const m = note.match(/TỔNG:\s*([\d.,]+)\s*đ/i);
+            if (!m) return 0;
+            return Number(m[1].replace(/\./g, '').replace(/,/g, '')) || 0;
+        };
+
+        // Build costed repairs from all asset repair data
+        const costedRepairs = assetData.flatMap(a =>
+            (a.repairs || [])
+                .filter((r: any) => r.handlerNote && parseCost(r.handlerNote) > 0)
+                .map((r: any) => ({
+                    time: r.time,
+                    assetId: a.id,
+                    assetName: a.name,
+                    location: a.location,
+                    issue: r.issue,
+                    person: r.person,
+                    repairStatus: r.repairStatus,
+                    result: r.result,
+                    handlerNote: r.handlerNote,
+                    cost: parseCost(r.handlerNote),
+                }))
+        ).filter(r => isDateInPeriod(r.time, period))
+            .sort((a, b) => {
+                const da = parseViDate(a.time);
+                const db = parseViDate(b.time);
+                return (db?.getTime() || 0) - (da?.getTime() || 0);
+            });
+
+        const totalCost = costedRepairs.reduce((sum, r) => sum + r.cost, 0);
+        const avgCost = costedRepairs.length > 0 ? totalCost / costedRepairs.length : 0;
+
+        // Group by department
+        const costByDept: Record<string, number> = {};
+        costedRepairs.forEach(r => {
+            costByDept[r.location || 'Khác'] = (costByDept[r.location || 'Khác'] || 0) + r.cost;
+        });
+
+        const fmt = (n: number) => new Intl.NumberFormat('vi-VN').format(n);
+
+        return (
+            <div className="space-y-6 animate-in fade-in duration-500">
+                {/* Cost Summary Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="bg-white rounded-[2rem] border border-slate-200/60 p-6 shadow-sm">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Tổng chi phí sửa chữa</p>
+                        <h3 className="text-2xl font-black text-sky-600 tracking-tight">{fmt(totalCost)} đ</h3>
+                        <p className="text-[10px] text-slate-400 mt-1">{costedRepairs.length} phiếu có chi phí</p>
+                    </div>
+                    <div className="bg-white rounded-[2rem] border border-slate-200/60 p-6 shadow-sm">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Chi phí trung bình / phiếu</p>
+                        <h3 className="text-2xl font-black text-emerald-600 tracking-tight">{fmt(Math.round(avgCost))} đ</h3>
+                        <p className="text-[10px] text-slate-400 mt-1">Trung bình mỗi lần sửa</p>
+                    </div>
+                    <div className="bg-white rounded-[2rem] border border-slate-200/60 p-6 shadow-sm">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Phòng ban chi nhiều nhất</p>
+                        <h3 className="text-xl font-black text-indigo-600 tracking-tight truncate">
+                            {Object.entries(costByDept).sort(([, a], [, b]) => b - a)[0]?.[0] || '—'}
+                        </h3>
+                        <p className="text-[10px] text-slate-400 mt-1">
+                            {Object.entries(costByDept).sort(([, a], [, b]) => b - a)[0]
+                                ? fmt(Object.entries(costByDept).sort(([, a], [, b]) => b - a)[0][1]) + ' đ'
+                                : 'Chưa có dữ liệu'}
+                        </p>
+                    </div>
+                </div>
+
+                {/* Cost by Department */}
+                {Object.keys(costByDept).length > 0 && (
+                    <div className="bg-white rounded-[2.5rem] border border-slate-200/60 shadow-sm overflow-hidden">
+                        <div className="px-8 py-6 border-b border-slate-100 flex items-center gap-3">
+                            <div className="w-2 h-6 bg-sky-500 rounded-full"></div>
+                            <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight">Chi phí theo Phòng Ban</h2>
+                        </div>
+                        <div className="p-6 space-y-3">
+                            {Object.entries(costByDept)
+                                .sort(([, a], [, b]) => b - a)
+                                .map(([dept, cost]) => (
+                                    <div key={dept} className="flex items-center gap-4">
+                                        <span className="text-sm font-bold text-slate-700 w-48 truncate">{dept}</span>
+                                        <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                            <div
+                                                className="h-full bg-sky-500 rounded-full transition-all duration-1000"
+                                                style={{ width: `${Math.min(100, (cost / (totalCost || 1)) * 100)}%` }}
+                                            />
+                                        </div>
+                                        <span className="text-sm font-black text-sky-600 font-mono whitespace-nowrap">{fmt(cost)} đ</span>
+                                    </div>
+                                ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Detailed Costed Repairs Table */}
+                <div className="bg-white rounded-[2.5rem] border border-slate-200/60 shadow-sm overflow-hidden">
+                    <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="w-2 h-6 bg-emerald-500 rounded-full"></div>
+                            <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight">Chi tiết phiếu sửa chữa có chi phí</h2>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">{costedRepairs.length} phiếu</span>
+                    </div>
+
+                    {loading ? (
+                        <div className="py-12 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-sky-500" /></div>
+                    ) : costedRepairs.length === 0 ? (
+                        <div className="py-12 text-center text-slate-400 italic text-sm">Chưa có phiếu sửa chữa nào có chi phí trong kỳ</div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left min-w-[900px]">
+                                <thead>
+                                    <tr className="bg-slate-50/50">
+                                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Thời gian</th>
+                                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Mã TS / Tên</th>
+                                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Phòng ban</th>
+                                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Nội dung lỗi</th>
+                                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Kết quả</th>
+                                        <th className="px-6 py-4 text-[10px] font-black text-sky-500 uppercase tracking-widest text-right">Chi phí</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-50">
+                                    {costedRepairs.map((r, i) => (
+                                        <tr key={i} className="hover:bg-sky-50/30 transition-colors">
+                                            <td className="px-6 py-3 text-xs font-mono text-slate-500 whitespace-nowrap">{r.time?.split(' ')[0] || '—'}</td>
+                                            <td className="px-6 py-3">
+                                                <div className="flex flex-col">
+                                                    <span className="text-xs font-bold text-slate-700 truncate max-w-[200px]">{r.assetName}</span>
+                                                    <span className="text-[10px] font-mono text-slate-400">{r.assetId}</span>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-3 text-xs text-slate-500">{r.location}</td>
+                                            <td className="px-6 py-3 text-xs text-slate-600 max-w-[200px] truncate" title={r.issue}>{r.issue}</td>
+                                            <td className="px-6 py-3">
+                                                <span className={`text-[10px] font-bold px-2 py-1 rounded-lg ${r.result === 'Đã hoàn thành' || r.result === 'Sửa chữa thành công'
+                                                    ? 'bg-emerald-50 text-emerald-600'
+                                                    : 'bg-amber-50 text-amber-600'
+                                                    }`}>{r.result || r.repairStatus}</span>
+                                            </td>
+                                            <td className="px-6 py-3 text-right">
+                                                <span className="text-sm font-black text-sky-600 font-mono">{fmt(r.cost)} đ</span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot>
+                                    <tr className="bg-sky-50/50 border-t-2 border-sky-100">
+                                        <td colSpan={5} className="px-6 py-4 text-sm font-black text-sky-800 uppercase">Tổng cộng</td>
+                                        <td className="px-6 py-4 text-right text-lg font-black text-sky-600 font-mono">{fmt(totalCost)} đ</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    )}
+                </div>
+
+                {/* Reference Price List (collapsible) */}
+                <details className="bg-white rounded-[2.5rem] border border-slate-200/60 shadow-sm overflow-hidden group">
+                    <summary className="px-8 py-6 cursor-pointer flex items-center gap-3 hover:bg-slate-50 transition-colors">
+                        <Wrench className="w-4 h-4 text-slate-400" />
+                        <span className="text-sm font-black text-slate-700 uppercase tracking-tight">Bảng giá tham khảo ({serviceData.length} dịch vụ)</span>
+                        <ChevronRight className="w-4 h-4 text-slate-400 ml-auto transition-transform group-open:rotate-90" />
+                    </summary>
+                    <div className="px-6 pb-6 space-y-4">
+                        {Array.from(new Set(serviceData.map(s => s.loai))).map(loai => (
+                            <div key={loai} className="border border-slate-100 rounded-2xl overflow-hidden">
+                                <div className="bg-slate-50 px-6 py-2 border-b border-slate-100">
+                                    <h3 className="text-xs font-black text-slate-600 uppercase">{loai}</h3>
+                                </div>
+                                <table className="w-full text-left">
+                                    <tbody className="divide-y divide-slate-50">
+                                        {serviceData.filter(s => s.loai === loai).map((s, i) => (
+                                            <tr key={s.row} className="hover:bg-slate-50/50">
+                                                <td className="px-6 py-2 text-xs text-slate-400 w-8">{i + 1}</td>
+                                                <td className="px-6 py-2 text-sm font-medium text-slate-700">{s.noiDung}</td>
+                                                <td className="px-6 py-2 text-xs text-slate-400 text-center w-16">{s.donViTinh}</td>
+                                                <td className="px-6 py-2 text-sm font-bold text-sky-600 text-right font-mono w-32">{fmt(s.donGia)} đ</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ))}
+                    </div>
+                </details>
+            </div>
+        );
     }
 
     const totalOriginal = assetData.reduce((acc, a) => acc + (a.originalPrice || 0), 0);
@@ -419,8 +673,11 @@ export default function ReportsPage() {
                             </div>
                         )}
                     </div>
+                ) : reportType === 'services' ? (
+                    renderServicesCostReport()
                 ) : reportType === 'insights' ? (
                     <div className="space-y-8 animate-in fade-in duration-500">
+
                         {/* 1. Alerts Section (Abnormal Activity) */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="bg-rose-50 border border-rose-100 rounded-[2rem] p-6 shadow-sm">

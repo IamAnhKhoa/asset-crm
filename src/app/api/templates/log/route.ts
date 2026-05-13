@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/authOptions';
-import { appendSheetRow, getSheetValues } from '@/lib/sheets';
-
-const SHEET_NAME = 'TemplateDownloads';
+import { supabase } from '@/lib/supabase';
 
 export async function POST(req: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -14,34 +12,38 @@ export async function POST(req: NextRequest) {
     const now = new Date();
     const timeStr = now.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
 
-    await appendSheetRow(SHEET_NAME, [
-        timeStr,
-        session.user?.tenChon || session.user?.name || '',
-        session.user?.phongBan || '',
-        session.user?.role || '',
-        templateId,
-        templateName,
-    ]);
+    // Create template_downloads table if needed (first run)
+    await supabase.from('template_downloads').insert({
+        time: timeStr,
+        user_name: (session.user as any)?.tenChon || session.user?.name || '',
+        dept: (session.user as any)?.phongBan || '',
+        role: (session.user as any)?.role || '',
+        template_id: templateId,
+        template_name: templateName,
+    });
 
     return NextResponse.json({ success: true });
 }
 
 export async function GET() {
     const session = await getServerSession(authOptions);
-    if (!session || session.user?.role !== 'admin_full') {
+    if (!session || (session.user as any)?.role !== 'admin_full') {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
     try {
-        const all = await getSheetValues(SHEET_NAME);
-        const rows = (all || []).slice(1); // skip header row
-        const logs = rows.map((r: string[]) => ({
-            time: r[0] || '',
-            user: r[1] || '',
-            dept: r[2] || '',
-            role: r[3] || '',
-            templateId: r[4] || '',
-            templateName: r[5] || '',
+        const { data } = await supabase
+            .from('template_downloads')
+            .select('*')
+            .order('id', { ascending: false });
+
+        const logs = (data || []).map((r: any) => ({
+            time: r.time || '',
+            user: r.user_name || '',
+            dept: r.dept || '',
+            role: r.role || '',
+            templateId: r.template_id || '',
+            templateName: r.template_name || '',
         }));
         return NextResponse.json({ logs });
     } catch {

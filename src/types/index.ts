@@ -10,7 +10,10 @@ export interface Asset {
     status: string;
     person?: string;
     specificLocation?: string;
+    oldLocation?: string;
     originalPrice?: number;
+    quantity?: number;
+    createdAt?: string;
     row?: number;
 }
 
@@ -105,7 +108,9 @@ export interface AssetFormData {
     status: string;
     person?: string;
     specificLocation?: string;
+    oldLocation?: string;
     originalPrice?: number;
+    quantity?: number;
     isEdit?: boolean;
 }
 
@@ -148,6 +153,7 @@ export interface NguoiDung {
     avatar?: string;
     status: 'pending' | 'approved' | 'rejected';
     lastActive?: string;
+    recentIps?: string[];
 }
 
 export const ROLE_LABELS: Record<UserRole, string> = {

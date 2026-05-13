@@ -39,6 +39,11 @@ export default function AssetsPage() {
     const [qrAsset, setQrAsset] = useState<Asset | null>(null);
     const [bulkQrModalOpen, setBulkQrModalOpen] = useState(false);
 
+    useEffect(() => {
+        (window as any).showAssetQR = (a: Asset) => setQrAsset(a);
+        return () => { delete (window as any).showAssetQR; };
+    }, []);
+
     async function load() {
         setLoading(true);
         try {
@@ -152,6 +157,9 @@ export default function AssetsPage() {
                     <p className="section-subtitle">{loading ? '...' : `${filtered.length} tài sản`}</p>
                 </div>
                 <div className="flex gap-2">
+                    <button onClick={() => setBulkQrModalOpen(true)} className="btn-secondary btn-sm gap-1.5 hidden sm:flex">
+                        <QrCode className="w-3.5 h-3.5" /> In QR hàng loạt
+                    </button>
                     {isEditor && (
                         <>
                             {duplicateIds.size > 0 && role === 'admin_full' && (
@@ -159,9 +167,6 @@ export default function AssetsPage() {
                                     <QrCode className="w-3.5 h-3.5" /> Sửa trùng lặp ({duplicateIds.size.toLocaleString()})
                                 </button>
                             )}
-                            <button onClick={() => setBulkQrModalOpen(true)} className="btn-secondary btn-sm gap-1.5 hidden sm:flex">
-                                <QrCode className="w-3.5 h-3.5" /> In QR hàng loạt
-                            </button>
                             <button onClick={() => { setSelected(null); setModal('add'); }} className="btn-primary btn-sm gap-1.5">
                                 <Plus className="w-3.5 h-3.5" /> Thêm tài sản
                             </button>
@@ -239,9 +244,12 @@ export default function AssetsPage() {
                                 <th>Tên tài sản</th>
                                 <th>Phòng / Kho</th>
                                 <th>Người giữ</th>
+                                {(role === 'admin_full' || role === 'admin_holder') && <th>Nơi cũ</th>}
                                 <th>Năm</th>
+                                <th>Số lượng</th>
                                 <th>Nguyên giá</th>
-                                <th>Còn lại</th>
+                                <th>Tổng giá</th>
+                                <th>Còn lại (Tổng)</th>
                                 <th>Trạng thái</th>
                                 <th className="text-right">{isEditor ? 'Thao tác' : ''}</th>
                             </tr>
@@ -281,20 +289,41 @@ export default function AssetsPage() {
                                         </td>
                                         <td className="text-slate-500">{a.location}</td>
                                         <td className="text-slate-500 max-w-[120px] truncate" title={a.person}>{a.person || '—'}</td>
+                                        {(role === 'admin_full' || role === 'admin_holder') && (
+                                            <td className="text-slate-500 max-w-[150px] truncate" title={a.oldLocation}>{a.oldLocation || '—'}</td>
+                                        )}
                                         <td className="text-slate-500">{a.year}</td>
-                                        <td className="text-slate-700 font-medium">
+                                        <td className="text-slate-500 font-medium text-center">{a.quantity || 1}</td>
+                                        <td className="text-slate-700">
                                             {a.originalPrice ? new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(a.originalPrice) : '—'}
+                                        </td>
+                                        <td className="text-slate-900 font-semibold">
+                                            {a.originalPrice ? new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(a.originalPrice * (a.quantity || 1)) : '—'}
                                         </td>
                                         <td className="text-indigo-600 font-medium">
                                             {a.originalPrice && a.year ? (() => {
                                                 const currentYear = new Date().getFullYear();
                                                 const yearsUsed = currentYear - Number(a.year);
                                                 const remainingPercent = Math.max(0, 1 - 0.2 * yearsUsed);
-                                                const remainingValue = a.originalPrice * remainingPercent;
+                                                const remainingValue = a.originalPrice * (a.quantity || 1) * remainingPercent;
                                                 return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(remainingValue);
                                             })() : '—'}
                                         </td>
-                                        <td><StatusBadge status={a.status} /></td>
+                                        <td>
+                                            <div className="flex flex-col gap-1">
+                                                <StatusBadge status={a.status} />
+                                                {a.createdAt && (() => {
+                                                    const created = new Date(a.createdAt);
+                                                    const diff = Date.now() - created.getTime();
+                                                    if (diff > 0 && diff < 3 * 24 * 60 * 60 * 1000) {
+                                                        return <span className="text-[10px] font-bold text-rose-500 bg-rose-50 px-1.5 py-0.5 rounded-full self-start inline-flex items-center gap-0.5">
+                                                            <Plus className="w-2.5 h-2.5" /> NEW
+                                                        </span>;
+                                                    }
+                                                    return null;
+                                                })()}
+                                            </div>
+                                        </td>
                                         <td>
                                             <div className="flex items-center justify-end gap-1">
                                                 <button
@@ -304,8 +333,41 @@ export default function AssetsPage() {
                                                 >
                                                     <Eye className="w-3.5 h-3.5" />
                                                 </button>
+                                                <button
+                                                    onClick={() => setQrAsset(a)}
+                                                    className="btn-icon btn-ghost text-slate-400 hover:text-indigo-500"
+                                                    title="In QR"
+                                                >
+                                                    <QrCode className="w-3.5 h-3.5" />
+                                                </button>
                                                 {isEditor && (
                                                     <>
+                                                        {(a.quantity || 1) > 1 && (
+                                                            <button
+                                                                onClick={async () => {
+                                                                    if (!confirm(`Tách ${a.quantity} tài sản thành các bản ghi riêng lẻ?`)) return;
+                                                                    setLoading(true);
+                                                                    try {
+                                                                        const r = await fetch(`/api/assets/split`, {
+                                                                            method: 'POST',
+                                                                            headers: { 'Content-Type': 'application/json' },
+                                                                            body: JSON.stringify({ assetId: a.id })
+                                                                        });
+                                                                        const res = await r.json();
+                                                                        if (res.success) {
+                                                                            alert('Đã tách tài sản thành công!');
+                                                                            load();
+                                                                        } else {
+                                                                            alert(`Lỗi: ${res.error}`);
+                                                                        }
+                                                                    } finally { setLoading(false); }
+                                                                }}
+                                                                className="btn-icon btn-ghost text-slate-400 hover:text-amber-500"
+                                                                title="Tách thành các tài sản riêng lẻ"
+                                                            >
+                                                                <Plus className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        )}
                                                         <button
                                                             onClick={() => { setSelected(a); setModal('edit'); }}
                                                             className="btn-icon btn-ghost text-slate-400 hover:text-indigo-500"

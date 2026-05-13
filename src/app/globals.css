@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+/* Google Fonts is now loaded via <link preload> in layout.tsx to avoid render-blocking */
 @import "tailwindcss";
 
 /* ================================
@@ -29,6 +29,8 @@
 
 html {
   scroll-behavior: smooth;
+  /* Prevent horizontal scroll shift causing layout jumps */
+  overflow-x: hidden;
 }
 
 body {
@@ -38,6 +40,13 @@ body {
   color: var(--text);
   background-color: var(--surface-raised);
   -webkit-font-smoothing: antialiased;
+  /* Prevent tap delay on all interactive elements */
+  touch-action: manipulation;
+  /* Prevent text size adjust on mobile orientation change */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Smooth overscroll */
+  overscroll-behavior-y: none;
 }
 
 /* ================================
@@ -59,6 +68,36 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
+}
+
+/* ================================
+   MOBILE SCROLL & TOUCH
+   ================================ */
+/* Momentum scrolling for iOS */
+.custom-scrollbar,
+[data-scroll],
+.overflow-y-auto,
+.overflow-auto {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Remove tap delay from all interactive elements */
+a,
+button,
+[role="button"],
+input,
+textarea,
+select,
+label {
+  touch-action: manipulation;
+}
+
+/* Reserve space for scrollbar to prevent CLS */
+@media (hover: hover) {
+  html {
+    scrollbar-gutter: stable;
+  }
 }
 
 /* ================================

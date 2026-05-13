@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { DEPARTMENT_NAMES, EMPLOYEES_DATA } from '@/lib/employees';
 import { useSession, signOut } from 'next-auth/react';
-import { Loader2, ArrowRight, UserCircle, Clock, LogOut } from 'lucide-react';
+import { Loader2, ArrowRight, UserCircle, Clock, LogOut, XCircle } from 'lucide-react';
 
 export default function SetupProfilePage() {
     const { data: session, update } = useSession();
@@ -14,11 +14,43 @@ export default function SetupProfilePage() {
     const [tenChon, setTenChon] = useState<string>('');
     const [loading, setLoading] = useState(false);
     const [submitted, setSubmitted] = useState(false);
+    const [liveStatus, setLiveStatus] = useState<string | null>(null);
+
+    const userStatus = liveStatus || (session?.user as any)?.status;
+    const profileComplete = (session?.user as any)?.profileComplete;
+    const isPendingApproval = userStatus === 'pending' && profileComplete;
+    const isRejected = userStatus === 'rejected';
 
     useEffect(() => {
-        if (session?.user?.phongBan) setPhongBan(session.user.phongBan);
-        if (session?.user?.tenChon) setTenChon(session.user.tenChon);
-    }, [session]);
+        if ((session?.user as any)?.phongBan) setPhongBan((session?.user as any).phongBan);
+        if ((session?.user as any)?.tenChon) setTenChon((session?.user as any).tenChon);
+
+        const checkStatus = async () => {
+            try {
+                const res = await fetch('/api/auth/status');
+                const data = await res.json();
+                if (data.status) {
+                    setLiveStatus(data.status);
+                    if (data.status === 'approved') {
+                        await update();
+                        window.location.href = '/dashboard';
+                    }
+                }
+            } catch (err) { }
+        };
+
+        // Initial check
+        checkStatus();
+
+        let interval: NodeJS.Timeout;
+        if (submitted || isPendingApproval || isRejected) {
+            interval = setInterval(checkStatus, 3000);
+        }
+
+        return () => {
+            if (interval) clearInterval(interval);
+        };
+    }, [session, submitted, isPendingApproval, isRejected, update]);
 
     const employeesInDept = phongBan ? EMPLOYEES_DATA[phongBan] || [] : [];
 
@@ -48,17 +80,31 @@ export default function SetupProfilePage() {
 
     if (!session) return null;
 
-    if (submitted) {
+    if (submitted || isPendingApproval || isRejected) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
                 <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-8 border border-slate-100 text-center">
-                    <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-6">
-                        <Clock className="w-8 h-8" />
-                    </div>
-                    <h1 className="text-2xl font-bold text-slate-900 mb-2">Đang chờ phê duyệt</h1>
-                    <p className="text-slate-500 mb-8">
-                        Yêu cầu của bạn đã được gửi. Vui lòng liên hệ Quản trị viên để được duyệt tài khoản trước khi sử dụng hệ thống.
-                    </p>
+                    {isRejected ? (
+                        <>
+                            <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                                <XCircle className="w-8 h-8" />
+                            </div>
+                            <h1 className="text-2xl font-bold text-slate-900 mb-2">Tài khoản bị cấm</h1>
+                            <p className="text-slate-500 mb-8">
+                                Tài khoản của bạn đã bị từ chối phê duyệt hoặc bị cấm truy cập hệ thống. Vui lòng liên hệ Quản trị viên nếu đây là sự nhầm lẫn.
+                            </p>
+                        </>
+                    ) : (
+                        <>
+                            <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                                <Clock className="w-8 h-8" />
+                            </div>
+                            <h1 className="text-2xl font-bold text-slate-900 mb-2">Đang chờ phê duyệt</h1>
+                            <p className="text-slate-500 mb-8">
+                                Yêu cầu của bạn đã được gửi. Vui lòng liên hệ Quản trị viên để được duyệt tài khoản trước khi sử dụng hệ thống.
+                            </p>
+                        </>
+                    )}
                     <div className="space-y-3">
                         <button onClick={() => router.push('/')} className="btn-primary w-full py-3">Quay lại trang chủ</button>
                         <button
