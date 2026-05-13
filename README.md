@@ -1,5 +1,7 @@
 # Asset CRM (Hệ thống Quản lý tài sản) 📦
 
+[![Deployed on Vercel](https://img.shields.io/badge/Deployed_on-Vercel-black?style=flat&logo=vercel&logoColor=white)](https://qlts-tah.vercel.app/)
+
 *Read this in other languages: [English](#english) | [Tiếng Việt](#tiếng-việt)*
 
 ---
@@ -7,6 +9,8 @@
 ## Tiếng Việt <a name="tiếng-việt"></a>
 
 Một hệ thống CRM Quản lý Tài sản hiện đại được xây dựng nhằm mục đích theo dõi thiết bị, quá trình sửa chữa, bảo trì và tích hợp bot Telegram để truy xuất dữ liệu nhanh chóng. Toàn bộ dữ liệu được lưu trữ và quản lý tập trung trên hệ quản trị cơ sở dữ liệu Supabase.
+
+**🌐 Xem Demo (Trực tiếp): [https://qlts-tah.vercel.app/](https://qlts-tah.vercel.app/)**
 
 ### 🛠 Công nghệ sử dụng (Tech Stack)
 
@@ -39,8 +43,13 @@ npm install
 yarn install
 ```
 
-**3. Thiết lập Biến môi trường**
-Tạo file `.env.local` ở thư mục gốc của dự án và sao chép nội dung sau (thay thế bằng các key của bạn):
+**3. Khởi tạo Cơ sở dữ liệu (Supabase)**
+- Truy cập tài khoản [Supabase](https://supabase.com/), tạo một dự án mới.
+- Vào phần **SQL Editor** trên giao diện của Supabase.
+- Copy và chạy toàn bộ mã SQL từ file `scripts/schema.sql` có trong source code để tạo sẵn cấu trúc các bảng dữ liệu cần thiết.
+
+**4. Thiết lập Biến môi trường**
+Tạo file `.env.local` ở thư mục gốc của dự án và điền các thông tin bảo mật:
 ```env
 # NextAuth (Mã bảo mật cho đăng nhập)
 NEXTAUTH_URL=http://localhost:3000
@@ -58,7 +67,7 @@ SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 ```
 
-**4. Khởi chạy ứng dụng (Development mode)**
+**5. Khởi chạy ứng dụng (Development mode)**
 ```bash
 npm run dev
 # hoặc
@@ -71,6 +80,8 @@ Mở trình duyệt và truy cập: [http://localhost:3000](http://localhost:300
 ## English <a name="english"></a>
 
 A modern Asset Management CRM built to track equipment, repair history, maintenance, and integrates a Telegram bot for quick data retrieval. All data is centrally managed and stored using Supabase.
+
+**🌐 Live Demo: [https://qlts-tah.vercel.app/](https://qlts-tah.vercel.app/)**
 
 ### 🛠 Tech Stack
 
@@ -103,7 +114,12 @@ npm install
 yarn install
 ```
 
-**3. Setup Environment Variables**
+**3. Database Setup (Supabase)**
+- Go to [Supabase](https://supabase.com/) and create a new project.
+- Open the **SQL Editor** in your Supabase dashboard.
+- Copy the entire SQL content from `scripts/schema.sql` (found in this repository) and run it to create the necessary tables.
+
+**4. Setup Environment Variables**
 Create a `.env.local` file in the root directory and configure the following variables:
 ```env
 # NextAuth
@@ -122,7 +138,7 @@ SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 ```
 
-**4. Run the development server**
+**5. Run the development server**
 ```bash
 npm run dev
 # or
